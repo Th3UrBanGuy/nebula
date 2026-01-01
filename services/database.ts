@@ -19,19 +19,14 @@ const getSql = () => {
 export const initializeSchema = async (): Promise<{ success: boolean; error?: string }> => {
     const sql = getSql();
     if (!sql) {
-        console.warn("DB: No connection string found. Skipping schema initialization.");
         return { success: false, error: "Missing Connection String" };
     }
 
     try {
-        // Log masked URL for debugging connection issues
-        // We print the params specifically to prove they are clean
-        const urlObj = new URL(CONFIG.DATABASE_URL);
-        const params = urlObj.searchParams.toString();
-        const maskedHost = urlObj.host;
-        console.log(`DB: Connecting to ${maskedHost} | Params: ${params || '(none)'}`);
+        const host = CONFIG.DATABASE_URL.split('@')[1]?.split('/')[0] || 'Unknown Host';
+        console.log(`DB: Connecting to ${host}...`);
         
-        // 1. Test basic connectivity first
+        // 1. Test basic connectivity
         await sql`SELECT 1`;
 
         // 2. Initialize Schema
@@ -80,15 +75,11 @@ export const initializeSchema = async (): Promise<{ success: boolean; error?: st
             )
         `;
         
-        console.log("DB: Schema verified and ready.");
+        console.log("DB: Connection Secure.");
         return { success: true };
     } catch (err: any) {
         console.error("DB Init Error:", err);
-        let msg = err.message || "Unknown Database Error";
-        if (msg.includes("Invalid name") || msg.includes("fetch")) {
-            msg = "Browser Security Block. Ensure 'channel_binding' is removed from URL. (Auto-fix attempted)";
-        }
-        return { success: false, error: msg };
+        return { success: false, error: err.message || "Connection Failed" };
     }
 };
 

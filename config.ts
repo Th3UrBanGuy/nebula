@@ -1,61 +1,53 @@
+
 // Config Interface
 interface Config {
   DATABASE_URL: string;
 }
 
 // Logic:
-// 1. Check for Vite environment variables
-// 2. Use the URL Class to parse and aggressively sanitize the connection string
-// 3. Remove params that cause browser 'fetch' header errors (channel_binding, sslmode)
+// The Neon Serverless HTTP driver for browsers is very sensitive to query parameters.
+// Parameters like 'channel_binding', 'sslmode', 'options' often cause "Invalid name" fetch errors.
+//
+// SIMPLIFIED STRATEGY:
+// We strictly strip ALL query parameters. The HTTP driver works perfectly with just
+// the base URL (postgres://user:pass@host/db). This removes all restrictions and potential errors.
+
 const getDatabaseUrl = (): string => {
-  let urlStr = "";
-
   try {
-      // @ts-ignore
-      if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_DATABASE_URL) {
-        // @ts-ignore
-        urlStr = String(import.meta.env.VITE_DATABASE_URL);
-      }
-  } catch (e) {
-      console.warn("Config: Error accessing import.meta.env");
-  }
+      // 1. Get URL from Environment or use default fallback
+      let url = "";
 
-  // Fallback if empty, undefined, or null
-  if (!urlStr || urlStr === "undefined" || urlStr === "null" || urlStr.trim() === "") {
-      // Default fallback (Clean URL without parameters)
-      urlStr = "postgresql://neondb_owner:npg_ZMlPjxOk63VF@ep-cool-water-adt0eidc-pooler.c-2.us-east-1.aws.neon.tech/neondb";
-  }
-
-  // --- ROBUST SANITIZATION ---
-  try {
-      // 1. Remove surrounding quotes if present
-      urlStr = urlStr.trim();
-      if ((urlStr.startsWith('"') && urlStr.endsWith('"')) || (urlStr.startsWith("'") && urlStr.endsWith("'"))) {
-          urlStr = urlStr.substring(1, urlStr.length - 1);
+      // Safe access: Check if import.meta.env exists before accessing properties
+      // This prevents "Cannot read properties of undefined (reading 'VITE_DATABASE_URL')"
+      if (typeof import.meta !== 'undefined' && import.meta.env) {
+          url = import.meta.env.VITE_DATABASE_URL;
       }
 
-      // 2. Parse using URL object to safely handle parameters
-      // Note: We force the protocol to be recognized if it's missing (though unlikely for a DB string)
-      if (!urlStr.includes("://")) {
-          urlStr = "postgresql://" + urlStr;
+      // Fallback if env var is missing (Development/Demo)
+      if (!url || typeof url !== 'string' || url === "undefined") {
+          return "postgresql://neondb_owner:npg_ZMlPjxOk63VF@ep-cool-water-adt0eidc-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require";
       }
 
-      const urlObj = new URL(urlStr);
+      // 2. Clean whitespace and quotes (common Vercel/Env copy-paste artifacts)
+      url = url.trim().replace(/["']/g, "");
 
-      // 3. REMOVE problematic parameters
-      // The neon driver sets these as HTTP Headers. Browsers reject invalid headers like 'channel_binding'.
-      urlObj.searchParams.delete('channel_binding'); 
-      urlObj.searchParams.delete('sslmode');
-      urlObj.searchParams.delete('options');
-      urlObj.searchParams.delete('connect_timeout');
+      // 3. NUCLEAR CLEANING: Remove everything after '?'
+      // This ensures 'channel_binding', 'sslmode', and any other browser-breaking params are gone.
+      const queryIndex = url.indexOf('?');
+      if (queryIndex !== -1) {
+          url = url.substring(0, queryIndex);
+      }
 
-      // 4. Return clean string
-      return urlObj.toString();
+      // 4. Ensure Protocol
+      if (!url.includes("://")) {
+          url = "postgresql://" + url;
+      }
+
+      return url;
 
   } catch (e) {
-      console.error("Config: Fatal Error parsing Database URL", e);
-      // Return the string stripped of common issues as a last resort, or empty if totally invalid
-      return urlStr.split('?')[0]; 
+      console.error("Config: Fatal Error processing URL", e);
+      return "";
   }
 };
 

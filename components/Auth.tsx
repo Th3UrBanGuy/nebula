@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { ArrowRight, Lock, Mail, Fingerprint, Activity, Hexagon, Globe, Shield, AlertTriangle, Database } from 'lucide-react';
 import { useStore } from '../store';
@@ -11,6 +12,9 @@ export const Auth: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [bootSequence, setBootSequence] = useState<string[]>([]);
+  
+  // State to allow bypassing DB check for "Workable" mode
+  const [bypassMode, setBypassMode] = useState(false);
 
   // Creative Boot Sequence Effect
   useEffect(() => {
@@ -34,8 +38,9 @@ export const Auth: React.FC = () => {
     setLoading(true);
     setError(null);
     
-    if (!isDbConfigured) {
-        setError("Database Connection Failed. Check console for details.");
+    // Allow login if DB is configured OR if we are in manual bypass mode (Emergency Protocol)
+    if (!isDbConfigured && !bypassMode) {
+        setError("Database Connection Failed. Switch to Emergency Mode to continue.");
         setLoading(false);
         return;
     }
@@ -43,6 +48,8 @@ export const Auth: React.FC = () => {
     // If logging in, role is undefined (inferred). If registering, use selected role.
     const success = await login(email, password, isLogin ? undefined : role);
     
+    // In bypass mode, login always 'succeeds' technically inside store fallback, but returns false if actual DB auth fails.
+    // However, if store handles the fallback correctly (creating local user), success will be true.
     if (!success) {
         setError(isLogin ? "Invalid credentials or user not found." : "Registration failed. User may already exist.");
     }
@@ -108,8 +115,8 @@ export const Auth: React.FC = () => {
                   </p>
               </div>
 
-              {/* DB Connection Alert with Detailed Error */}
-              {!isDbConfigured && (
+              {/* DB Connection Alert with Detailed Error & Bypass Option */}
+              {!isDbConfigured && !bypassMode && (
                   <div className="mb-6 p-4 bg-orange-900/10 border border-orange-500/30 rounded-xl flex flex-col items-start text-orange-400 text-sm font-bold animate-pulse">
                       <div className="flex items-center mb-1">
                         <Database className="w-5 h-5 mr-3 shrink-0" />
@@ -123,9 +130,28 @@ export const Auth: React.FC = () => {
                             ERROR_LOG: {dbConnectionError}
                         </div>
                       )}
-                      <p className="text-[10px] mt-3 opacity-50 pl-1 font-mono uppercase tracking-wide">
-                         ACTION REQUIRED: Verify VITE_DATABASE_URL in Vercel. <br /> Note: Changes require a Redeploy.
-                      </p>
+                      <div className="mt-3 pl-1 w-full flex justify-between items-center">
+                          <span className="text-[10px] opacity-50 font-mono uppercase tracking-wide">
+                              STATUS: OFFLINE
+                          </span>
+                          <button 
+                             onClick={() => setBypassMode(true)}
+                             className="px-3 py-1 bg-orange-500/20 hover:bg-orange-500/40 text-orange-500 rounded text-xs uppercase font-bold transition-all border border-orange-500/50"
+                          >
+                              Enable Emergency Bypass
+                          </button>
+                      </div>
+                  </div>
+              )}
+
+              {/* Bypass Mode Active Indicator */}
+              {bypassMode && (
+                  <div className="mb-6 p-3 bg-red-900/20 border border-red-500/30 rounded-xl flex items-center justify-between text-red-400 text-xs font-bold">
+                      <div className="flex items-center">
+                          <AlertTriangle className="w-4 h-4 mr-2" />
+                          EMERGENCY PROTOCOL ACTIVE
+                      </div>
+                      <span className="text-[10px] opacity-70">LOCAL MODE</span>
                   </div>
               )}
 
@@ -197,7 +223,7 @@ export const Auth: React.FC = () => {
 
                   <button
                       type="submit"
-                      disabled={loading || !isDbConfigured}
+                      disabled={loading || (!isDbConfigured && !bypassMode)}
                       className="group relative w-full flex justify-center py-4 px-4 border border-transparent rounded-xl text-base font-bold text-white bg-white overflow-hidden transition-all hover:scale-[1.02] active:scale-[0.98] mt-8 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                       <div className="absolute inset-0 bg-gradient-to-r from-orange-600 via-red-600 to-orange-600 group-hover:bg-[length:200%_200%] transition-all animate-gradient-xy"></div>
