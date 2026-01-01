@@ -1,3 +1,4 @@
+
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
@@ -9,8 +10,7 @@ export default defineConfig({
     rollupOptions: {
         output: {
             manualChunks: {
-                vendor: ['react', 'react-dom', 'zustand', 'date-fns', 'lucide-react'],
-                db: ['@neondatabase/serverless']
+                vendor: ['react', 'react-dom', 'zustand', 'date-fns', 'lucide-react']
             }
         }
     }

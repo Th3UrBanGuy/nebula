@@ -1,9 +1,10 @@
 
 import { create } from 'zustand';
-import { AppState, MOCK_CHANNELS, generateMockPrograms, ViewState, User, CHARACTER_AVATARS, COVER_SCENES, License } from './types';
+import { AppState, generateMockPrograms, ViewState, User, CHARACTER_AVATARS, COVER_SCENES, License } from './types';
 import { fetchChannelsFromDB, addChannelsToDB, deleteChannelFromDB, loginUserFromDB, registerUserInDB, getUserById, updateUserInDB, initializeSchema, createLicenseInDB, fetchAllLicenses, redeemLicenseKey } from './services/database';
 
 // Updated MOCK_CHANNELS with REAL WORKING PUBLIC STREAMS for demonstration
+// Using reliable CDN test streams (Mux, Akamai) to ensure playback stability in prototype mode
 const WORKING_CHANNELS = [
   { 
     id: 'nasa', 
@@ -17,59 +18,62 @@ const WORKING_CHANNELS = [
     streamUrl: 'https://ntv1.akamaized.net/hls/live/2014075/NASA-TV-Public/master.m3u8'
   },
   { 
-    id: 'redbull', 
+    id: 'action_sports', 
     number: '102', 
-    name: 'Red Bull TV', 
+    name: 'Action Sports', 
     provider: 'Red Bull', 
     category: 'Sports', 
     color: 'bg-gradient-to-br from-red-700 to-yellow-500', 
     logo: 'https://upload.wikimedia.org/wikipedia/en/thumb/f/f5/Red_Bull_TV_logo.svg/1200px-Red_Bull_TV_logo.svg.png', 
     description: 'Extreme sports, music, and lifestyle entertainment.',
-    streamUrl: 'https://rbmn-live.akamaized.net/hls/live/590964/BoRB-AT/master.m3u8'
+    // Using a reliable high-motion test stream to simulate sports
+    streamUrl: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8' 
   },
   { 
     id: 'aljazeera', 
     number: '103', 
-    name: 'Al Jazeera', 
-    provider: 'News Network', 
+    name: 'News 24', 
+    provider: 'Global News', 
     category: 'News', 
     color: 'bg-gradient-to-br from-orange-500 to-amber-600', 
     logo: 'https://upload.wikimedia.org/wikipedia/en/thumb/f/f2/Aljazeera_eng.svg/1200px-Aljazeera_eng.svg.png', 
     description: 'Breaking news and in-depth analysis from around the world.',
-    streamUrl: 'https://live-hls-web-aje.getaj.net/AJE/03.m3u8'
+    // Using Akamai live test stream as placeholder for news (often Al Jazeera blocks loose embedding)
+    streamUrl: 'https://cph-p2p-msl.akamaized.net/hls/live/2000341/test/master.m3u8'
   },
   { 
-    id: 'dw', 
+    id: 'cinema_one', 
     number: '104', 
-    name: 'DW English', 
-    provider: 'Deutsche Welle', 
-    category: 'News', 
+    name: 'Cinema One', 
+    provider: 'Nebula Movies', 
+    category: 'Movies', 
     color: 'bg-gradient-to-br from-blue-500 to-cyan-500', 
     logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/26/Deutsche_Welle_Logo_2012.svg/1200px-Deutsche_Welle_Logo_2012.svg.png', 
-    description: 'Germany’s international broadcaster.',
-    streamUrl: 'https://dwammseu-lh.akamaihd.net/i/dwstream555_live@127380/index_720_av-p.m3u8'
+    description: 'Classic cinema and independent films.',
+    streamUrl: 'https://test-streams.mux.dev/tos_isf/playlist.m3u8'
   },
   { 
-    id: 'rakuten', 
+    id: 'fantasy_tv', 
     number: '105', 
-    name: 'Rakuten Action', 
+    name: 'Fantasy TV', 
     provider: 'Rakuten', 
-    category: 'Movies', 
+    category: 'Entertainment', 
     color: 'bg-gradient-to-br from-purple-600 to-pink-600', 
     logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/25/Rakuten_TV_logo.svg/2560px-Rakuten_TV_logo.svg.png', 
-    description: 'Non-stop action movies and thrillers.',
-    streamUrl: 'https://rakuten-actionmovies-1-eu.rakuten.wurl.tv/playlist.m3u8'
+    description: 'Dragons, dungeons, and epic tales.',
+    streamUrl: 'https://bitdash-a.akamaihd.net/content/sintel/hls/playlist.m3u8'
   },
    { 
-    id: 'ted', 
+    id: 'tech_talk', 
     number: '106', 
-    name: 'TED', 
+    name: 'Tech Talk', 
     provider: 'TED Talks', 
     category: 'Education', 
     color: 'bg-gradient-to-br from-red-600 to-red-500', 
     logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/aa/TED_three_letter_logo.svg/1200px-TED_three_letter_logo.svg.png', 
-    description: 'Ideas worth spreading.',
-    streamUrl: 'https://ted-events-1-eu.rakuten.wurl.tv/playlist.m3u8'
+    description: 'Ideas worth spreading and future tech.',
+    // Using simple reliable stream
+    streamUrl: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8'
   }
 ];
 
@@ -82,8 +86,6 @@ export const useStore = create<AppState>((set, get) => ({
   channels: [],
   programs: [],
   isLoading: true,
-  isDbConfigured: false,
-  dbConnectionError: undefined,
   adminLicenses: [],
 
   setView: (view: ViewState) => set({ view }),
@@ -192,16 +194,25 @@ export const useStore = create<AppState>((set, get) => ({
     return false;
   },
 
-  generateNewLicense: async (plan: string, days: number) => {
-    // Generate format: NEBULA-XXXX-XXXX
-    const randomPart = Math.random().toString(36).substr(2, 8).toUpperCase();
-    const key = `NEBULA-${randomPart.slice(0,4)}-${randomPart.slice(4,8)}`;
+  generateNewLicense: async (plan: string, days: number, customKey?: string) => {
+    let key;
+
+    if (customKey && customKey.trim().length > 0) {
+        key = customKey.trim().toUpperCase();
+    } else {
+        // Generate format: NEBULA-XXXX-XXXX
+        const randomPart = Math.random().toString(36).substr(2, 8).toUpperCase();
+        key = `NEBULA-${randomPart.slice(0,4)}-${randomPart.slice(4,8)}`;
+    }
     
-    const success = await createLicenseInDB(key, plan, days);
-    if (success) {
+    const result = await createLicenseInDB(key, plan, days);
+    if (result.success) {
         // Refresh local cache
         const licenses = await fetchAllLicenses();
         set({ adminLicenses: licenses });
+    } else {
+        console.error(result.message);
+        throw new Error(result.message); // Propagate error for UI handling
     }
   },
 
@@ -211,13 +222,12 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   initialize: async () => {
-    // 0. Initialize DB Schema with Error Capture
-    const { success, error } = await initializeSchema();
-    set({ isDbConfigured: success, dbConnectionError: error });
+    // 0. Initialize Mock DB
+    await initializeSchema();
 
     // 1. Restore Session
     const sessionId = localStorage.getItem('nebula_session');
-    if (sessionId && success) {
+    if (sessionId) {
         const user = await getUserById(sessionId);
         if (user) {
             // Check expiry on load
@@ -231,16 +241,15 @@ export const useStore = create<AppState>((set, get) => ({
     }
 
     // 2. Fetch Content
-    let channels = null;
-    if (success) {
-        channels = await fetchChannelsFromDB();
-    }
+    let channels = await fetchChannelsFromDB();
 
+    // 3. Seed Mock Content if DB is empty (First run)
     if (!channels || channels.length === 0) {
-      console.log("System: DB empty or unreachable. Loading Emergency Protocol (Working Streams).");
+      console.log("System: Proto DB empty. Seeding default channels.");
       channels = WORKING_CHANNELS;
+      await addChannelsToDB(WORKING_CHANNELS);
     } else {
-      console.log("System: Connected to Neural Network (Live DB).");
+      console.log("System: Loaded channels from local prototype storage.");
     }
 
     setTimeout(() => {

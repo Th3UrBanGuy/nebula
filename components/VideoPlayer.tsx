@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useStore } from '../store';
 import videojs from 'video.js';
@@ -72,7 +73,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
 
     // Mode 1: CORS/HTTPS Proxy Tunneling
     // We use a public CORS proxy to bypass restriction. 
-    // In production, this should be your own proxy server.
     return `https://corsproxy.io/?${encodeURIComponent(channel.streamUrl)}`;
   }, [channel, connectionMode]);
 
@@ -97,6 +97,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
 
     const currentSrc = getStreamUrl();
 
+    // Simplified options to improve compatibility
     const options = {
         autoplay: isPlaying,
         controls: false,
@@ -108,16 +109,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
         }],
         html5: {
             vhs: {
-                overrideNative: true,
                 enableLowInitialPlaylist: true,
-                handleManifestRedirects: true,
-                bandwidth: 4194304, // Start with reasonable bandwidth assumption
-                limitRenditionByPlayerDimensions: false,
                 smoothQualityChange: true,
                 cacheEncryptionKeys: true,
-            },
-            nativeAudioTracks: false,
-            nativeVideoTracks: false
+                // Removed overrideNative: true to allow Safari to use native HLS which is robust
+            }
         }
     };
 
@@ -136,6 +132,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
     player.on('canplay', () => setIsLoading(false));
     
     player.on('error', () => {
+        if (!player) return;
         const err = player.error();
         console.warn("Player Error:", err);
         
@@ -144,9 +141,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
             console.log("Direct connection failed. Attempting proxy reroute...");
             setIsLoading(true);
             setError("Rerouting Signal...");
-            setTimeout(() => setConnectionMode(1), 1000); // Trigger re-render with proxy
+            setTimeout(() => setConnectionMode(1), 1500); // Trigger re-render with proxy
         } else {
             setIsLoading(false);
+            // Don't show generic object error to user
             setError("Signal Lost. Source Unreachable.");
         }
     });

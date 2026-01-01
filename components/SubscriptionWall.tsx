@@ -1,24 +1,45 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useStore } from '../store';
-import { Lock, Key, CheckCircle, ShieldAlert, LogOut } from 'lucide-react';
+import { Lock, Key, CheckCircle, ShieldAlert, LogOut, Loader2, Clock } from 'lucide-react';
 
 export const SubscriptionWall: React.FC = () => {
     const { user, redeemLicense, logout } = useStore();
     const [key, setKey] = useState('');
-    const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+    const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error' | 'locked'>('idle');
+    const [lockTimer, setLockTimer] = useState(0);
+
+    // Lockout countdown effect
+    useEffect(() => {
+        let interval: any;
+        if (status === 'locked' && lockTimer > 0) {
+            interval = setInterval(() => {
+                setLockTimer((prev) => prev - 1);
+            }, 1000);
+        } else if (lockTimer === 0 && status === 'locked') {
+            setStatus('idle');
+        }
+        return () => clearInterval(interval);
+    }, [status, lockTimer]);
 
     const handleRedeem = async (e: React.FormEvent) => {
         e.preventDefault();
+        
+        // Prevent multi-touch / bulk submission
+        if (status === 'loading' || status === 'locked' || status === 'success') return;
+
         setStatus('loading');
         
-        // Slight artificial delay for effect
+        // Ensure immediate UI feedback to disable button
+        // Slight artificial delay for effect and to debounce rapid clicks
         setTimeout(async () => {
             const success = await redeemLicense(key);
             if (success) {
                 setStatus('success');
             } else {
-                setStatus('error');
+                // Engage Lockout Protocol
+                setStatus('locked');
+                setLockTimer(3); // 3 seconds lock
             }
         }, 1500);
     };
@@ -64,15 +85,30 @@ export const SubscriptionWall: React.FC = () => {
                                 <input 
                                     type="text" 
                                     value={key}
-                                    onChange={(e) => { setKey(e.target.value.toUpperCase()); setStatus('idle'); }}
+                                    onChange={(e) => { 
+                                        if (status !== 'locked') {
+                                            setKey(e.target.value.toUpperCase()); 
+                                            if (status === 'error') setStatus('idle');
+                                        }
+                                    }}
+                                    disabled={status === 'locked' || status === 'loading'}
                                     placeholder="XXXX-XXXX-XXXX"
-                                    className="w-full bg-black/50 border border-stone-700 rounded-xl py-4 pl-12 pr-4 text-white placeholder-stone-600 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 font-mono tracking-wider transition-all"
+                                    className={`w-full bg-black/50 border rounded-xl py-4 pl-12 pr-4 text-white placeholder-stone-600 focus:outline-none focus:ring-1 font-mono tracking-wider transition-all 
+                                        ${status === 'locked' ? 'border-red-900/50 opacity-50 cursor-not-allowed' : 'border-stone-700 focus:border-orange-500 focus:ring-orange-500'}
+                                    `}
                                 />
                             </div>
                         </div>
 
+                        {status === 'locked' && (
+                            <div className="flex items-center justify-center text-red-500 text-xs font-bold bg-red-900/10 p-3 rounded-lg border border-red-900/50 animate-pulse">
+                                <Clock className="w-4 h-4 mr-2" />
+                                Security Lockout: {lockTimer}s
+                            </div>
+                        )}
+                        
                         {status === 'error' && (
-                            <div className="flex items-center text-red-500 text-xs font-bold bg-red-900/10 p-3 rounded-lg border border-red-900/50">
+                             <div className="flex items-center justify-center text-red-500 text-xs font-bold bg-red-900/10 p-3 rounded-lg border border-red-900/50">
                                 <ShieldAlert className="w-4 h-4 mr-2" />
                                 Invalid License Key
                             </div>
@@ -80,10 +116,15 @@ export const SubscriptionWall: React.FC = () => {
 
                         <button 
                             type="submit" 
-                            disabled={status === 'loading' || !key}
-                            className="w-full py-4 bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-500 hover:to-red-500 text-white font-bold rounded-xl shadow-[0_0_20px_rgba(234,88,12,0.3)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled={status === 'loading' || status === 'locked' || !key}
+                            className={`w-full py-4 font-bold rounded-xl shadow-[0_0_20px_rgba(234,88,12,0.3)] transition-all flex items-center justify-center
+                                ${status === 'loading' || status === 'locked' 
+                                    ? 'bg-stone-800 text-stone-500 cursor-not-allowed' 
+                                    : 'bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-500 hover:to-red-500 text-white'}
+                            `}
                         >
-                            {status === 'loading' ? 'Verifying...' : 'Activate Access'}
+                            {status === 'loading' && <Loader2 className="w-5 h-5 animate-spin mr-2" />}
+                            {status === 'locked' ? 'Locked' : (status === 'loading' ? 'Verifying...' : 'Activate Access')}
                         </button>
                     </form>
                 )}

@@ -1,10 +1,9 @@
-
 import React, { useState, useEffect } from 'react';
-import { ArrowRight, Lock, Mail, Fingerprint, Activity, Hexagon, Globe, Shield, AlertTriangle, Database } from 'lucide-react';
+import { ArrowRight, Lock, Mail, Activity, Hexagon, Shield, AlertTriangle } from 'lucide-react';
 import { useStore } from '../store';
 
 export const Auth: React.FC = () => {
-  const { login, isDbConfigured, dbConnectionError } = useStore();
+  const { login } = useStore();
   const [isLogin, setIsLogin] = useState(true);
   const [role, setRole] = useState<'admin' | 'viewer'>('viewer');
   const [email, setEmail] = useState('');
@@ -13,15 +12,12 @@ export const Auth: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [bootSequence, setBootSequence] = useState<string[]>([]);
   
-  // State to allow bypassing DB check for "Workable" mode
-  const [bypassMode, setBypassMode] = useState(false);
-
   // Creative Boot Sequence Effect
   useEffect(() => {
     const sequence = [
       "INITIALIZING NEBULA CORE...",
-      isDbConfigured ? "SECURE DB UPLINK ESTABLISHED." : "WARNING: DATABASE DISCONNECTED.",
-      "VERIFYING ENCRYPTION KEYS...",
+      "ESTABLISHING UPLINK TO NEON CLOUD...",
+      "AUTHENTICATING DATABASE PROTOCOLS...",
       "SYSTEM READY."
     ];
     let delay = 0;
@@ -31,25 +27,16 @@ export const Auth: React.FC = () => {
         }, delay);
         delay += 800;
     });
-  }, [isDbConfigured]);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
     
-    // Allow login if DB is configured OR if we are in manual bypass mode (Emergency Protocol)
-    if (!isDbConfigured && !bypassMode) {
-        setError("Database Connection Failed. Switch to Emergency Mode to continue.");
-        setLoading(false);
-        return;
-    }
-
     // If logging in, role is undefined (inferred). If registering, use selected role.
     const success = await login(email, password, isLogin ? undefined : role);
     
-    // In bypass mode, login always 'succeeds' technically inside store fallback, but returns false if actual DB auth fails.
-    // However, if store handles the fallback correctly (creating local user), success will be true.
     if (!success) {
         setError(isLogin ? "Invalid credentials or user not found." : "Registration failed. User may already exist.");
     }
@@ -82,11 +69,11 @@ export const Auth: React.FC = () => {
                   </div>
                   
                   <h1 className="text-6xl font-black text-white leading-tight mb-6">
-                      Production <br />
+                      Live <br />
                       <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-red-500">Environment</span>
                   </h1>
                   <p className="text-xl text-stone-400 max-w-lg leading-relaxed">
-                      Secure, persistent access to live media streams. Powered by Neon Serverless Database.
+                      Powered by Neon Serverless Postgres. Persistent data layer with secure cloud synchronization.
                   </p>
               </div>
 
@@ -111,49 +98,9 @@ export const Auth: React.FC = () => {
                       {isLogin ? 'Authenticate' : 'Initialize ID'}
                   </h2>
                   <p className="text-stone-400 text-sm md:text-base">
-                      {isLogin ? 'Enter credentials to access the system.' : 'Create a persistent user identity in the database.'}
+                      {isLogin ? 'Enter credentials to access the system.' : 'Create a persistent user identity in the cloud.'}
                   </p>
               </div>
-
-              {/* DB Connection Alert with Detailed Error & Bypass Option */}
-              {!isDbConfigured && !bypassMode && (
-                  <div className="mb-6 p-4 bg-orange-900/10 border border-orange-500/30 rounded-xl flex flex-col items-start text-orange-400 text-sm font-bold animate-pulse">
-                      <div className="flex items-center mb-1">
-                        <Database className="w-5 h-5 mr-3 shrink-0" />
-                        <span>Database Not Connected</span>
-                      </div>
-                      <p className="text-xs font-normal opacity-70 mb-3 pl-8">
-                        The system cannot authenticate without a live database.
-                      </p>
-                      {dbConnectionError && (
-                        <div className="w-full bg-black/40 p-3 rounded-lg text-[10px] font-mono text-red-300 break-all border border-red-900/30">
-                            ERROR_LOG: {dbConnectionError}
-                        </div>
-                      )}
-                      <div className="mt-3 pl-1 w-full flex justify-between items-center">
-                          <span className="text-[10px] opacity-50 font-mono uppercase tracking-wide">
-                              STATUS: OFFLINE
-                          </span>
-                          <button 
-                             onClick={() => setBypassMode(true)}
-                             className="px-3 py-1 bg-orange-500/20 hover:bg-orange-500/40 text-orange-500 rounded text-xs uppercase font-bold transition-all border border-orange-500/50"
-                          >
-                              Enable Emergency Bypass
-                          </button>
-                      </div>
-                  </div>
-              )}
-
-              {/* Bypass Mode Active Indicator */}
-              {bypassMode && (
-                  <div className="mb-6 p-3 bg-red-900/20 border border-red-500/30 rounded-xl flex items-center justify-between text-red-400 text-xs font-bold">
-                      <div className="flex items-center">
-                          <AlertTriangle className="w-4 h-4 mr-2" />
-                          EMERGENCY PROTOCOL ACTIVE
-                      </div>
-                      <span className="text-[10px] opacity-70">LOCAL MODE</span>
-                  </div>
-              )}
 
               {error && (
                   <div className="mb-6 p-4 bg-red-900/20 border border-red-500/50 rounded-xl flex items-center text-red-400 text-sm font-bold animate-pulse">
@@ -223,12 +170,12 @@ export const Auth: React.FC = () => {
 
                   <button
                       type="submit"
-                      disabled={loading || (!isDbConfigured && !bypassMode)}
+                      disabled={loading}
                       className="group relative w-full flex justify-center py-4 px-4 border border-transparent rounded-xl text-base font-bold text-white bg-white overflow-hidden transition-all hover:scale-[1.02] active:scale-[0.98] mt-8 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                       <div className="absolute inset-0 bg-gradient-to-r from-orange-600 via-red-600 to-orange-600 group-hover:bg-[length:200%_200%] transition-all animate-gradient-xy"></div>
                       <span className="relative flex items-center">
-                          {loading ? 'Connecting...' : (isLogin ? 'Initiate Session' : 'Create Identity')}
+                          {loading ? 'Processing...' : (isLogin ? 'Initiate Session' : 'Create Identity')}
                           {!loading && <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />}
                       </span>
                   </button>

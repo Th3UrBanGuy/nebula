@@ -1,199 +1,201 @@
-
-import { neon } from '@neondatabase/serverless';
 import { Channel, User, LicenseKey } from '../types';
-import { CONFIG } from '../config';
+import { Pool } from '@neondatabase/serverless';
 
-// Helper to get DB client
-const getSql = () => {
-  if (!CONFIG.DATABASE_URL) return null;
-  try {
-      return neon(CONFIG.DATABASE_URL);
-  } catch (e) {
-      console.error("Neon Client Error:", e);
-      return null;
-  }
-};
+// Specific connection string provided for the Nebula OS Conceptual Environment
+const DATABASE_URL = 'postgresql://neondb_owner:npg_ZMlPjxOk63VF@ep-cool-water-adt0eidc-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require';
+
+const pool = new Pool({ connectionString: DATABASE_URL });
 
 // --- INITIALIZATION ---
 
 export const initializeSchema = async (): Promise<{ success: boolean; error?: string }> => {
-    const sql = getSql();
-    if (!sql) {
-        return { success: false, error: "Missing Connection String" };
-    }
-
     try {
-        const host = CONFIG.DATABASE_URL.split('@')[1]?.split('/')[0] || 'Unknown Host';
-        console.log(`DB: Connecting to ${host}...`);
-        
-        // 1. Test basic connectivity
-        await sql`SELECT 1`;
-
-        // 2. Initialize Schema
-        await sql`
-            CREATE TABLE IF NOT EXISTS users (
+        // Create tables if they don't exist
+        const queries = [
+            `CREATE TABLE IF NOT EXISTS users (
                 id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                email TEXT UNIQUE NOT NULL,
-                password TEXT NOT NULL,
-                role TEXT DEFAULT 'viewer',
+                name TEXT,
+                email TEXT UNIQUE,
+                password TEXT,
+                role TEXT,
                 avatar TEXT,
                 cover_image TEXT,
                 bio TEXT,
                 preferences JSONB,
                 license_data JSONB
-            )
-        `;
+            )`,
+            `CREATE TABLE IF NOT EXISTS channels (
+                id TEXT PRIMARY KEY,
+                number TEXT,
+                name TEXT,
+                logo TEXT,
+                provider TEXT,
+                category TEXT,
+                color TEXT,
+                description TEXT,
+                stream_url TEXT
+            )`,
+            `CREATE TABLE IF NOT EXISTS licenses (
+                id TEXT PRIMARY KEY,
+                key_code TEXT UNIQUE,
+                plan_name TEXT,
+                duration_days INTEGER,
+                status TEXT,
+                created_at BIGINT
+            )`
+        ];
 
+        for (const q of queries) {
+            await pool.query(q);
+        }
+
+        // --- MIGRATION FIXES ---
+        // Ensure columns exist if table was created with older schema (Fixes "column does not exist" errors)
         try {
-            await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS license_data JSONB`;
-        } catch (e) {
-            // Ignore migration error
+            await pool.query(`ALTER TABLE channels ADD COLUMN IF NOT EXISTS number TEXT`);
+            await pool.query(`ALTER TABLE channels ADD COLUMN IF NOT EXISTS stream_url TEXT`);
+        } catch (migErr) {
+            console.log("Migration Note:", migErr);
         }
         
-        await sql`
-            CREATE TABLE IF NOT EXISTS channels (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                logo TEXT,
-                category TEXT,
-                provider TEXT,
-                stream_url TEXT,
-                description TEXT
-            )
-        `;
-
-        // Create License Table
-        await sql`
-            CREATE TABLE IF NOT EXISTS license_keys (
-                id TEXT PRIMARY KEY,
-                key_code TEXT UNIQUE NOT NULL,
-                plan_name TEXT NOT NULL,
-                duration_days INTEGER NOT NULL,
-                status TEXT DEFAULT 'unused',
-                created_at BIGINT NOT NULL
-            )
-        `;
-        
-        console.log("DB: Connection Secure.");
+        console.log("Neon DB: Schema Initialized and Connected.");
         return { success: true };
-    } catch (err: any) {
-        console.error("DB Init Error:", err);
-        return { success: false, error: err.message || "Connection Failed" };
+    } catch (e: any) {
+        console.error("Neon DB Init Error:", e);
+        return { success: false, error: e.message };
     }
 };
 
 // --- CHANNEL OPERATIONS ---
 
 export const fetchChannelsFromDB = async (): Promise<Channel[] | null> => {
-  const sql = getSql();
-  if (!sql) return null;
+    try {
+        const { rows } = await pool.query('SELECT * FROM channels ORDER BY number ASC');
+        if (rows.length === 0) return null;
 
-  try {
-    const result = await sql`SELECT * FROM channels`;
-    return result.map((row: any) => ({
-      id: row.id,
-      number: row.id.substring(0, 4), // Generate pseudo number from ID
-      name: row.name,
-      logo: row.logo,
-      provider: row.provider,
-      category: row.category,
-      color: 'bg-stone-800', // Default color, or store in DB if needed
-      description: row.description,
-      streamUrl: row.stream_url
-    }));
-  } catch (err) {
-    console.error("DB Fetch Error:", err);
-    return null;
-  }
+        return rows.map((row: any) => ({
+            id: row.id,
+            number: row.number || '000', // Fallback if column was just added
+            name: row.name,
+            logo: row.logo,
+            provider: row.provider,
+            category: row.category,
+            color: row.color,
+            description: row.description,
+            streamUrl: row.stream_url
+        }));
+    } catch (err) {
+        console.error("Fetch Channels Error:", err);
+        return null;
+    }
 };
 
 export const addChannelsToDB = async (channels: Channel[]): Promise<boolean> => {
-  const sql = getSql();
-  if (!sql) return false;
-
-  try {
-    for (const ch of channels) {
-      await sql`
-        INSERT INTO channels (id, name, logo, category, provider, stream_url, description)
-        VALUES (${ch.id}, ${ch.name}, ${ch.logo}, ${ch.category}, ${ch.provider}, ${ch.streamUrl}, ${ch.description})
-        ON CONFLICT (id) DO NOTHING
-      `;
+    try {
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            for (const c of channels) {
+                await client.query(
+                    `INSERT INTO channels (id, number, name, logo, provider, category, color, description, stream_url) 
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
+                     ON CONFLICT (id) DO UPDATE SET
+                     number = EXCLUDED.number,
+                     name = EXCLUDED.name,
+                     logo = EXCLUDED.logo,
+                     stream_url = EXCLUDED.stream_url`,
+                    [c.id, c.number, c.name, c.logo, c.provider, c.category, c.color, c.description, c.streamUrl]
+                );
+            }
+            await client.query('COMMIT');
+            return true;
+        } catch (e) {
+            await client.query('ROLLBACK');
+            throw e;
+        } finally {
+            client.release();
+        }
+    } catch (err) {
+        console.error("Add Channels Error:", err);
+        return false;
     }
-    return true;
-  } catch (err) {
-    console.error("DB Import Error:", err);
-    return false;
-  }
 };
 
 export const deleteChannelFromDB = async (id: string): Promise<boolean> => {
-    const sql = getSql();
-    if (!sql) return false;
     try {
-        await sql`DELETE FROM channels WHERE id = ${id}`;
+        await pool.query('DELETE FROM channels WHERE id = $1', [id]);
         return true;
     } catch (err) {
-        console.error("DB Delete Error:", err);
         return false;
     }
-}
+};
 
 // --- LICENSE OPERATIONS ---
 
-export const createLicenseInDB = async (key: string, plan: string, days: number): Promise<boolean> => {
-    const sql = getSql();
-    if (!sql) return false;
+export const createLicenseInDB = async (key: string, plan: string, days: number): Promise<{success: boolean, message?: string}> => {
     try {
         const id = 'lic_' + Math.random().toString(36).substr(2, 9);
-        await sql`
-            INSERT INTO license_keys (id, key_code, plan_name, duration_days, status, created_at)
-            VALUES (${id}, ${key}, ${plan}, ${days}, 'unused', ${Date.now()})
-        `;
-        return true;
-    } catch (err) {
-        console.error("License Creation Error:", err);
-        return false;
+        const createdAt = Date.now();
+        
+        await pool.query(
+            `INSERT INTO licenses (id, key_code, plan_name, duration_days, status, created_at) 
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [id, key, plan, days, 'unused', createdAt]
+        );
+        return { success: true };
+    } catch (err: any) {
+        if (err.code === '23505') {
+            return { success: false, message: "License key already exists." };
+        }
+        return { success: false, message: "Database error." };
     }
 };
 
 export const fetchAllLicenses = async (): Promise<LicenseKey[]> => {
-    const sql = getSql();
-    if (!sql) return [];
     try {
-        const result = await sql`SELECT * FROM license_keys ORDER BY created_at DESC`;
-        return result.map((row: any) => ({
+        const { rows } = await pool.query('SELECT * FROM licenses ORDER BY created_at DESC');
+        return rows.map((row: any) => ({
             id: row.id,
             key: row.key_code,
             plan: row.plan_name,
             durationDays: row.duration_days,
-            status: row.status,
+            status: row.status as 'unused' | 'redeemed',
             createdAt: Number(row.created_at)
         }));
     } catch (err) {
-        console.error("Fetch Licenses Error:", err);
         return [];
     }
 };
 
 export const redeemLicenseKey = async (key: string): Promise<{valid: boolean, plan?: string, days?: number}> => {
-    const sql = getSql();
-    if (!sql) return { valid: false };
+    if (key === 'LIVE-FREE-2025') return { valid: true, plan: 'Nebula Access Pass', days: 365 };
 
     try {
-        // Check for special hardcoded keys first
-        if (key === 'LIVE-FREE-2025') return { valid: true, plan: 'Nebula Access Pass', days: 365 };
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            const res = await client.query('SELECT * FROM licenses WHERE key_code = $1 FOR UPDATE', [key]);
+            if (res.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return { valid: false };
+            }
 
-        // Check DB
-        const result = await sql`SELECT * FROM license_keys WHERE key_code = ${key} AND status = 'unused'`;
-        
-        if (result.length > 0) {
-            const lic = result[0];
-            // Mark as used
-            await sql`UPDATE license_keys SET status = 'redeemed' WHERE id = ${lic.id}`;
-            return { valid: true, plan: lic.plan_name, days: lic.duration_days };
+            const license = res.rows[0];
+            if (license.status !== 'unused') {
+                await client.query('ROLLBACK');
+                return { valid: false };
+            }
+
+            await client.query("UPDATE licenses SET status = 'redeemed' WHERE id = $1", [license.id]);
+            await client.query('COMMIT');
+
+            return { valid: true, plan: license.plan_name, days: license.duration_days };
+        } catch (e) {
+            await client.query('ROLLBACK');
+            throw e;
+        } finally {
+            client.release();
         }
-        return { valid: false };
     } catch (err) {
         console.error("Redeem Error:", err);
         return { valid: false };
@@ -203,82 +205,101 @@ export const redeemLicenseKey = async (key: string): Promise<{valid: boolean, pl
 // --- USER / AUTH OPERATIONS ---
 
 export const registerUserInDB = async (user: User, password: string): Promise<boolean> => {
-  const sql = getSql();
-  if (!sql) return false;
-
-  try {
-    // Pass objects directly; Neon driver handles JSON serialization for JSONB columns.
-    await sql`
-      INSERT INTO users (id, name, email, password, role, avatar, cover_image, bio, preferences, license_data)
-      VALUES (${user.id}, ${user.name}, ${user.email}, ${password}, ${user.role}, ${user.avatar}, ${user.coverImage || null}, ${user.bio}, ${user.preferences}, ${user.license || null})
-    `;
-    return true;
-  } catch (err) {
-    console.error("Registration Error:", err);
-    return false;
-  }
+    try {
+        await pool.query(
+            `INSERT INTO users (id, name, email, password, role, avatar, cover_image, bio, preferences, license_data)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+            [
+                user.id, 
+                user.name, 
+                user.email, 
+                password, 
+                user.role, 
+                user.avatar, 
+                user.coverImage, 
+                user.bio, 
+                JSON.stringify(user.preferences), 
+                JSON.stringify(user.license || null)
+            ]
+        );
+        return true;
+    } catch (err) {
+        console.error("Register Error:", err);
+        return false;
+    }
 };
 
 export const loginUserFromDB = async (email: string, password: string): Promise<User | null> => {
-  const sql = getSql();
-  if (!sql) return null;
-
-  try {
-    const result = await sql`SELECT * FROM users WHERE email = ${email} AND password = ${password}`;
-    
-    if (result.length > 0) {
-      const row = result[0];
-      return mapUserRow(row);
+    try {
+        const { rows } = await pool.query('SELECT * FROM users WHERE email = $1 AND password = $2', [email, password]);
+        if (rows.length > 0) {
+            const row = rows[0];
+            return {
+                id: row.id,
+                name: row.name,
+                email: row.email,
+                role: row.role as 'admin' | 'viewer',
+                avatar: row.avatar,
+                coverImage: row.cover_image,
+                bio: row.bio,
+                preferences: row.preferences || { notifications: true, autoplay: true },
+                license: row.license_data
+            };
+        }
+        return null;
+    } catch (err) {
+        console.error("Login Error:", err);
+        return null;
     }
-    return null;
-  } catch (err) {
-    console.error("Login Error:", err);
-    return null;
-  }
 };
 
 export const getUserById = async (id: string): Promise<User | null> => {
-    const sql = getSql();
-    if (!sql) return null;
-
     try {
-        const result = await sql`SELECT * FROM users WHERE id = ${id}`;
-        if (result.length > 0) {
-            return mapUserRow(result[0]);
+        const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+        if (rows.length > 0) {
+            const row = rows[0];
+            return {
+                id: row.id,
+                name: row.name,
+                email: row.email,
+                role: row.role as 'admin' | 'viewer',
+                avatar: row.avatar,
+                coverImage: row.cover_image,
+                bio: row.bio,
+                preferences: row.preferences || { notifications: true, autoplay: true },
+                license: row.license_data
+            };
         }
         return null;
     } catch (err) {
         return null;
     }
-}
+};
 
 export const updateUserInDB = async (user: User): Promise<boolean> => {
-    const sql = getSql();
-    if (!sql) return false;
     try {
-        await sql`
-            UPDATE users 
-            SET name = ${user.name}, bio = ${user.bio}, avatar = ${user.avatar}, cover_image = ${user.coverImage}, license_data = ${user.license || null}
-            WHERE id = ${user.id}
-        `;
+        await pool.query(
+            `UPDATE users SET 
+             name = $1, 
+             bio = $2, 
+             avatar = $3, 
+             cover_image = $4, 
+             preferences = $5, 
+             license_data = $6 
+             WHERE id = $7`,
+            [
+                user.name,
+                user.bio,
+                user.avatar,
+                user.coverImage,
+                JSON.stringify(user.preferences),
+                JSON.stringify(user.license || null),
+                user.id
+            ]
+        );
         return true;
     } catch (err) {
-        console.error("Update User Error", err);
+        console.error("Update User Error:", err);
         return false;
     }
-}
-
-// Helper to map DB row to User object
-const mapUserRow = (row: any): User => {
-    return {
-        id: row.id,
-        name: row.name,
-        email: row.email,
-        role: row.role as 'admin' | 'viewer',
-        avatar: row.avatar,
-        coverImage: row.cover_image,
-        bio: row.bio,
-        preferences: typeof row.preferences === 'string' ? JSON.parse(row.preferences) : (row.preferences || { notifications: true, autoplay: true }),
-        license: typeof row.license_data === 'string' ? JSON.parse(row.license_data) : row.license_data
-    };
 };

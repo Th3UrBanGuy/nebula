@@ -23,8 +23,9 @@ export const AdminPanel: React.FC = () => {
   const [manualForm, setManualForm] = useState({ name: '', logo: '', category: '', provider: 'Custom', streamUrl: '', description: '' });
 
   // --- Sub-States for License Module ---
-  const [licenseForm, setLicenseForm] = useState({ plan: 'Standard Access', days: 30 });
+  const [licenseForm, setLicenseForm] = useState({ plan: 'Standard Access', days: 30, customKey: '' });
   const [generatedKey, setGeneratedKey] = useState<string | null>(null);
+  const [licenseError, setLicenseError] = useState<string | null>(null);
 
   // Security Gate
   if (user?.role !== 'admin') {
@@ -107,9 +108,16 @@ export const AdminPanel: React.FC = () => {
 
   // --- LOGIC: License Management ---
   const handleGenerateLicense = async () => {
-      await generateNewLicense(licenseForm.plan, licenseForm.days);
-      setGeneratedKey("Key generated successfully."); // Ideally, fetch the latest, but list updates automatically via store
-      setTimeout(() => setGeneratedKey(null), 3000);
+      try {
+        setLicenseError(null);
+        await generateNewLicense(licenseForm.plan, licenseForm.days, licenseForm.customKey);
+        setGeneratedKey("Key generated successfully."); 
+        setLicenseForm({...licenseForm, customKey: ''}); // Clear custom key input after success
+        setTimeout(() => setGeneratedKey(null), 3000);
+      } catch (e: any) {
+        setLicenseError(e.message || "Failed to generate key");
+        setTimeout(() => setLicenseError(null), 3000);
+      }
   };
 
   const copyToClipboard = (text: string) => {
@@ -360,6 +368,17 @@ export const AdminPanel: React.FC = () => {
                                 className="w-full bg-black border border-stone-700 p-3 rounded-xl text-white outline-none focus:border-green-500"
                              />
                          </div>
+                         <div className="space-y-2">
+                             <label className="text-xs font-bold text-stone-500 uppercase">Custom Key (Optional)</label>
+                             <input 
+                                type="text" 
+                                value={licenseForm.customKey} 
+                                onChange={e => setLicenseForm({...licenseForm, customKey: e.target.value.toUpperCase()})}
+                                placeholder="E.g., PRO-USER-2025"
+                                className="w-full bg-black border border-stone-700 p-3 rounded-xl text-white outline-none focus:border-green-500 font-mono tracking-wider"
+                             />
+                             <p className="text-[10px] text-stone-600">Leave blank to auto-generate.</p>
+                         </div>
 
                          <button onClick={handleGenerateLicense} className="w-full py-4 bg-green-600 hover:bg-green-500 text-white font-bold rounded-xl shadow-lg transition-all flex items-center justify-center">
                              <Plus className="w-5 h-5 mr-2" /> Generate Key
@@ -369,6 +388,12 @@ export const AdminPanel: React.FC = () => {
                             <div className="mt-4 p-4 bg-green-900/20 border border-green-500/50 rounded-xl text-center animate-fade-in-up">
                                 <CheckCircle className="w-8 h-8 text-green-500 mx-auto mb-2" />
                                 <p className="text-green-400 font-bold">Key Created Successfully</p>
+                            </div>
+                         )}
+                         {licenseError && (
+                            <div className="mt-4 p-4 bg-red-900/20 border border-red-500/50 rounded-xl text-center animate-pulse">
+                                <AlertTriangle className="w-8 h-8 text-red-500 mx-auto mb-2" />
+                                <p className="text-red-400 font-bold">{licenseError}</p>
                             </div>
                          )}
                      </div>

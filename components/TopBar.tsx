@@ -1,15 +1,13 @@
+
 import React, { useEffect, useState } from 'react';
-import { Wifi, Signal, Cloud, ShieldCheck, MapPin } from 'lucide-react';
+import { Wifi, Signal, Cloud, MapPin } from 'lucide-react';
 import { format } from 'date-fns';
 import { useStore } from '../store';
-import { CONFIG } from '../config';
 
 export const TopBar: React.FC = () => {
   const [time, setTime] = useState(new Date());
-  const { activeChannelId, channels, user, setView } = useStore();
+  const { user, setView } = useStore();
   
-  const isSecureMode = !!CONFIG.DATABASE_URL;
-
   useEffect(() => {
     const interval = setInterval(() => setTime(new Date()), 60000);
     return () => clearInterval(interval);

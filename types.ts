@@ -64,8 +64,6 @@ export interface AppState {
   channels: Channel[];
   programs: Program[];
   isLoading: boolean;
-  isDbConfigured: boolean;
-  dbConnectionError?: string;
   adminLicenses: LicenseKey[]; // Cache for admin view
 
   // Actions
