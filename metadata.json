@@ -1,0 +1,7 @@
+{
+  "name": "Nebula Live OS",
+  "description": "A next-generation web-based Live TV Operating System featuring a native-like interface, seamless EPG navigation, and AI-powered content recommendations.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
