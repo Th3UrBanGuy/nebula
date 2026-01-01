@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useStore } from '../store';
-import { Maximize2, Minimize2, Volume2, VolumeX, Pause, Play, Settings, Cast, Radio, AlertCircle, Loader2 } from 'lucide-react';
-import Hls from 'hls.js';
+import videojs from 'video.js';
+import { Maximize2, Minimize2, Volume2, VolumeX, Pause, Play, Settings, AlertCircle, Loader2, RefreshCw } from 'lucide-react';
 
 interface VideoPlayerProps {
   isMini: boolean;
@@ -9,22 +9,20 @@ interface VideoPlayerProps {
 
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
   const { activeChannelId, channels, isPlaying, volume, togglePlay, setView } = useStore();
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const hlsRef = useRef<Hls | null>(null);
+  const videoContainerRef = useRef<HTMLDivElement>(null);
+  const playerRef = useRef<any>(null); // Using any for VideoJS player instance to avoid tight type coupling in this setup
   const controlsTimeoutRef = useRef<number | null>(null);
 
   const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
   const [showControls, setShowControls] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   
   const channel = channels.find(c => c.id === activeChannelId);
 
   // --- Keyboard & User Interaction Logic ---
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-        if (isMini) return; // Ignore if in mini mode
+        if (isMini) return;
         switch(e.key.toLowerCase()) {
             case ' ':
                 e.preventDefault();
@@ -35,7 +33,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
                 toggleFullscreen();
                 break;
             case 'm':
-                if (videoRef.current) videoRef.current.muted = !videoRef.current.muted;
+                if (playerRef.current) playerRef.current.muted(!playerRef.current.muted());
                 break;
         }
     };
@@ -52,97 +50,92 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
 
   const toggleFullscreen = () => {
       if (!document.fullscreenElement) {
-          containerRef.current?.requestFullscreen().catch(err => console.log(err));
-          setIsFullscreen(true);
+          videoContainerRef.current?.requestFullscreen().catch(err => console.log(err));
       } else {
           document.exitFullscreen();
-          setIsFullscreen(false);
       }
   };
 
-  // --- HLS & Playback Logic ---
+  // --- Video.js Initialization & Management ---
   useEffect(() => {
-    if (!channel || !channel.streamUrl) return;
+    if (!channel || !channel.streamUrl || !videoContainerRef.current) return;
 
-    const video = videoRef.current;
-    if (!video) return;
-
-    setError(null);
     setIsLoading(true);
+    setError(null);
 
-    const handleManifestParsed = () => {
-        setIsLoading(false);
-        if (isPlaying) {
-            video.play().catch(e => console.warn("Autoplay blocked:", e));
-        }
-    };
+    // If player exists, dispose it to create a fresh one for the new channel
+    if (playerRef.current) {
+        playerRef.current.dispose();
+        playerRef.current = null;
+    }
 
-    const handleError = (e: any, data: any) => {
-        if (data.fatal) {
-            console.error("HLS Fatal Error:", data);
-            setIsLoading(false);
-            switch (data.type) {
-                case Hls.ErrorTypes.NETWORK_ERROR:
-                    hlsRef.current?.startLoad();
-                    break;
-                case Hls.ErrorTypes.MEDIA_ERROR:
-                    hlsRef.current?.recoverMediaError();
-                    break;
-                default:
-                    setError("Stream Unavailable");
-                    hlsRef.current?.destroy();
-                    break;
+    // Create the video-js element dynamically
+    const videoElement = document.createElement("video-js");
+    videoElement.classList.add('vjs-default-skin', 'vjs-big-play-centered', 'vjs-fill');
+    videoContainerRef.current.appendChild(videoElement);
+
+    const options = {
+        autoplay: isPlaying,
+        controls: false, // We use our custom UI
+        responsive: true,
+        fluid: true,
+        sources: [{
+            src: channel.streamUrl,
+            type: 'application/x-mpegURL'
+        }],
+        html5: {
+            vhs: {
+                overrideNative: true
             }
         }
     };
 
-    // Cleanup previous instance
-    if (hlsRef.current) {
-        hlsRef.current.destroy();
-        hlsRef.current = null;
-    }
-
-    if (Hls.isSupported()) {
-        const hls = new Hls({
-            enableWorker: true,
-            lowLatencyMode: true,
-            backBufferLength: 90
-        });
-        hls.loadSource(channel.streamUrl);
-        hls.attachMedia(video);
-        hls.on(Hls.Events.MANIFEST_PARSED, handleManifestParsed);
-        hls.on(Hls.Events.ERROR, handleError);
-        hlsRef.current = hls;
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        // Native HLS (Safari)
-        video.src = channel.streamUrl;
-        video.addEventListener('loadedmetadata', handleManifestParsed);
-        video.addEventListener('error', () => {
-            setIsLoading(false);
-            setError("Playback Error");
-        });
-    } else {
-        setError("Format Not Supported");
+    const player = playerRef.current = videojs(videoElement, options, () => {
         setIsLoading(false);
-    }
+        console.log('VideoJS Player Ready');
+    });
+
+    player.on('waiting', () => setIsLoading(true));
+    player.on('playing', () => setIsLoading(false));
+    player.on('canplay', () => setIsLoading(false));
+    
+    player.on('error', () => {
+        setIsLoading(false);
+        const err = player.error();
+        console.error("VideoJS Error:", err);
+        setError(err?.message || "Stream Connection Failed");
+    });
 
     return () => {
-        if (hlsRef.current) hlsRef.current.destroy();
-        if (video) video.removeEventListener('loadedmetadata', handleManifestParsed);
+        if (player && !player.isDisposed()) {
+            player.dispose();
+            playerRef.current = null;
+        }
     };
   }, [channel?.id, channel?.streamUrl]);
 
-  // Sync Global State
+  // --- Sync Global State with Player ---
+  
+  // Sync Play/Pause
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    if (isPlaying && video.paused && !error) video.play().catch(() => {});
-    else if (!isPlaying && !video.paused) video.pause();
-  }, [isPlaying, error]);
+    const player = playerRef.current;
+    if (player && !player.isDisposed()) {
+        if (isPlaying && player.paused()) {
+            player.play()?.catch((e: any) => console.log("Play interrupted", e));
+        } else if (!isPlaying && !player.paused()) {
+            player.pause();
+        }
+    }
+  }, [isPlaying]);
 
+  // Sync Volume
   useEffect(() => {
-    if (videoRef.current) videoRef.current.volume = volume / 100;
+    const player = playerRef.current;
+    if (player && !player.isDisposed()) {
+        player.volume(volume / 100);
+    }
   }, [volume]);
+
 
   if (!channel) return null;
 
@@ -150,60 +143,70 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
       if (isMini) setView('player');
   };
 
+  const handleRetry = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (channel?.streamUrl && playerRef.current) {
+          setError(null);
+          setIsLoading(true);
+          playerRef.current.src({ src: channel.streamUrl, type: 'application/x-mpegURL' });
+          playerRef.current.load();
+          playerRef.current.play();
+      }
+  };
+
   const hasRealStream = !!channel.streamUrl;
 
   return (
     <div 
-        ref={containerRef}
         onClick={handleMiniClick}
         onMouseMove={showControlsTemporarily}
         onDoubleClick={toggleFullscreen}
         className={`relative w-full h-full bg-black group overflow-hidden ${isMini ? 'cursor-pointer' : ''}`}
     >
-      <div className="absolute inset-0 flex items-center justify-center overflow-hidden bg-black">
-        {hasRealStream ? (
-            <>
-                <video 
-                    ref={videoRef}
-                    className="w-full h-full object-contain"
-                    poster={channel.logo.startsWith('http') ? channel.logo : undefined}
-                    playsInline
-                    crossOrigin="anonymous"
-                />
-                
-                {isLoading && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-10 backdrop-blur-sm">
-                        <Loader2 className="w-10 h-10 text-orange-500 animate-spin" />
-                    </div>
-                )}
-
-                {error && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-stone-900/90 z-20">
-                        <AlertCircle className="w-12 h-12 text-red-500 mb-2" />
-                        <p className="text-white font-bold">{error}</p>
-                    </div>
-                )}
-            </>
-        ) : (
+      {/* Video Container for VideoJS */}
+      <div className="absolute inset-0 bg-black flex items-center justify-center">
+         {hasRealStream ? (
+            <div data-vjs-player className="w-full h-full">
+                <div ref={videoContainerRef} className="w-full h-full" />
+            </div>
+         ) : (
             <div className="relative w-full h-full flex items-center justify-center">
                  <img 
                     src={channel.logo.startsWith('http') ? channel.logo : `https://picsum.photos/seed/${channel.id}/1920/1080`} 
                     alt="Broadcast" 
                     className="w-full h-full object-cover blur-3xl opacity-30 absolute"
                 />
-                 <img 
-                        src={`https://picsum.photos/seed/${channel.id}/1920/1080`} 
-                        alt="Broadcast" 
-                        className={`w-full h-full object-contain transition-transform duration-[20s] ease-linear ${isPlaying ? 'scale-110' : 'scale-100'}`}
-                    />
             </div>
-        )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent pointer-events-none opacity-50" />
+         )}
       </div>
+
+      {/* Overlays (Loading / Error) */}
+      {hasRealStream && (
+        <>
+            {isLoading && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-20 backdrop-blur-sm pointer-events-none">
+                    <Loader2 className="w-10 h-10 text-orange-500 animate-spin" />
+                </div>
+            )}
+            {error && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-stone-900/95 z-30 p-6 text-center">
+                    <AlertCircle className="w-12 h-12 text-red-500 mb-2" />
+                    <p className="text-white font-bold mb-1">Signal Lost</p>
+                    <p className="text-stone-400 text-xs font-mono mb-4">{error}</p>
+                    <button 
+                        onClick={handleRetry}
+                        className="flex items-center px-4 py-2 bg-stone-800 hover:bg-stone-700 text-white rounded-full text-sm font-bold transition-colors border border-stone-600"
+                    >
+                        <RefreshCw className="w-4 h-4 mr-2" /> Retry Connection
+                    </button>
+                </div>
+            )}
+        </>
+      )}
 
       {/* Mini Player Overlay */}
       {isMini && (
-        <div className="absolute inset-0 z-30 flex items-end p-5 bg-gradient-to-t from-black via-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="absolute inset-0 z-40 flex items-end p-5 bg-gradient-to-t from-black via-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
             <div className="w-full">
                 <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center space-x-2">
@@ -217,9 +220,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
         </div>
       )}
 
-      {/* Full Player Controls */}
+      {/* Full Player Controls (Custom UI) */}
       {!isMini && (
-        <div className={`absolute inset-0 flex flex-col justify-between p-6 md:p-10 z-30 transition-opacity duration-300 ${showControls || !isPlaying ? 'opacity-100' : 'opacity-0'}`}>
+        <div className={`absolute inset-0 flex flex-col justify-between p-6 md:p-10 z-40 transition-opacity duration-300 ${showControls || !isPlaying ? 'opacity-100' : 'opacity-0'}`}>
             {/* Top Bar */}
             <div className="flex justify-between items-start bg-gradient-to-b from-black/80 to-transparent p-4 -mx-4 -mt-4">
                 <div className="flex items-center space-x-4">

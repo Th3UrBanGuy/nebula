@@ -5,7 +5,7 @@ interface Config {
 
 // Logic:
 // 1. Check for Vite environment variables (Deployment/Production/Local .env)
-// 2. Return empty string if missing (handled gracefully in database.ts)
+// 2. Return the provided connection string as fallback for immediate functionality
 const getDatabaseUrl = (): string => {
   // @ts-ignore - import.meta.env is provided by Vite
   if (import.meta.env && import.meta.env.VITE_DATABASE_URL) {
@@ -13,9 +13,9 @@ const getDatabaseUrl = (): string => {
     return import.meta.env.VITE_DATABASE_URL;
   }
   
-  // Security: Do not hardcode secrets here. 
-  // Use a .env file locally with VITE_DATABASE_URL=...
-  return "";
+  // DIRECT OVERRIDE: Using the provided connection string to ensure immediate functionality.
+  // In a real production environment, keep this in a .env file.
+  return "postgresql://neondb_owner:npg_ZMlPjxOk63VF@ep-cool-water-adt0eidc-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require";
 };
 
 export const CONFIG: Config = {

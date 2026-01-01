@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Nebula Live OS</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
     <style>
       /* Custom Scrollbar for the OS feel - Warm Theme */
       ::-webkit-scrollbar {
@@ -27,6 +28,11 @@
         overflow: hidden; /* Prevent body scroll, handle inside app */
         -webkit-tap-highlight-color: transparent;
       }
+      /* Override VideoJS default font and icons if needed, but keeping default is fine */
+      .video-js {
+        width: 100%;
+        height: 100%;
+      }
     </style>
   <script type="importmap">
 {
@@ -40,7 +46,7 @@
     "@neondatabase/serverless": "https://esm.sh/@neondatabase/serverless@0.6.0",
     "vite": "https://esm.sh/vite@^7.3.0",
     "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
-    "hls.js": "https://esm.sh/hls.js@1.5.8"
+    "video.js": "https://esm.sh/video.js@8.10.0"
   }
 }
 </script>

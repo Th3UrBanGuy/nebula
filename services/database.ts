@@ -44,7 +44,7 @@ export const initializeSchema = async (): Promise<boolean> => {
             )
         `;
         
-        console.log("DB: Schema verified.");
+        console.log("DB: Schema verified and ready.");
         return true;
     } catch (err) {
         console.error("DB Init Error:", err);
@@ -115,9 +115,10 @@ export const registerUserInDB = async (user: User, password: string): Promise<bo
   if (!sql) return false;
 
   try {
+    // Pass user.preferences object directly; Neon driver handles JSON serialization for JSONB columns.
     await sql`
       INSERT INTO users (id, name, email, password, role, avatar, cover_image, bio, preferences)
-      VALUES (${user.id}, ${user.name}, ${user.email}, ${password}, ${user.role}, ${user.avatar}, ${user.coverImage || null}, ${user.bio}, ${JSON.stringify(user.preferences)})
+      VALUES (${user.id}, ${user.name}, ${user.email}, ${password}, ${user.role}, ${user.avatar}, ${user.coverImage || null}, ${user.bio}, ${user.preferences})
     `;
     return true;
   } catch (err) {
@@ -143,7 +144,8 @@ export const loginUserFromDB = async (email: string, password: string): Promise<
         avatar: row.avatar,
         coverImage: row.cover_image,
         bio: row.bio,
-        preferences: row.preferences || { notifications: true, autoplay: true }
+        // Ensure preferences is an object
+        preferences: typeof row.preferences === 'string' ? JSON.parse(row.preferences) : (row.preferences || { notifications: true, autoplay: true })
       };
     }
     return null;
@@ -169,7 +171,7 @@ export const getUserById = async (id: string): Promise<User | null> => {
                 avatar: row.avatar,
                 coverImage: row.cover_image,
                 bio: row.bio,
-                preferences: row.preferences
+                preferences: typeof row.preferences === 'string' ? JSON.parse(row.preferences) : (row.preferences || { notifications: true, autoplay: true })
             };
         }
         return null;
