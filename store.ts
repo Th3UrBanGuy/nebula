@@ -1,7 +1,7 @@
 
 import { create } from 'zustand';
 import { AppState, MOCK_CHANNELS, generateMockPrograms, ViewState, User, CHARACTER_AVATARS, COVER_SCENES, License } from './types';
-import { fetchChannelsFromDB, addChannelsToDB, deleteChannelFromDB, loginUserFromDB, registerUserInDB, getUserById, updateUserInDB, initializeSchema } from './services/database';
+import { fetchChannelsFromDB, addChannelsToDB, deleteChannelFromDB, loginUserFromDB, registerUserInDB, getUserById, updateUserInDB, initializeSchema, createLicenseInDB, fetchAllLicenses, redeemLicenseKey } from './services/database';
 
 // Updated MOCK_CHANNELS with REAL WORKING PUBLIC STREAMS for demonstration
 const WORKING_CHANNELS = [
@@ -84,6 +84,7 @@ export const useStore = create<AppState>((set, get) => ({
   isLoading: true,
   isDbConfigured: false,
   dbConnectionError: undefined,
+  adminLicenses: [],
 
   setView: (view: ViewState) => set({ view }),
   
@@ -170,29 +171,43 @@ export const useStore = create<AppState>((set, get) => ({
     const currentUser = get().user;
     if (!currentUser) return false;
 
-    // Simulate License Validation Logic
-    // In production, verify against a backend service/DB
-    let plan = '';
-    let duration = 0;
+    // Verify key in DB
+    const { valid, plan, days } = await redeemLicenseKey(key);
 
-    if (key === 'LIVE-FREE-2025' || key.startsWith('NEBULA-')) {
-        plan = 'Nebula Access Pass';
-        duration = 1000 * 60 * 60 * 24 * 365; // 1 Year
-    } else {
-        return false; // Invalid Key
+    if (valid && plan && days) {
+        const durationMs = days * 24 * 60 * 60 * 1000;
+        const newLicense: License = {
+            key: key,
+            status: 'active',
+            expiryDate: Date.now() + durationMs,
+            planName: plan
+        };
+
+        const updatedUser = { ...currentUser, license: newLicense };
+        set({ user: updatedUser });
+        await updateUserInDB(updatedUser);
+        return true;
     }
 
-    const newLicense: License = {
-        key: key,
-        status: 'active',
-        expiryDate: Date.now() + duration,
-        planName: plan
-    };
+    return false;
+  },
 
-    const updatedUser = { ...currentUser, license: newLicense };
-    set({ user: updatedUser });
-    await updateUserInDB(updatedUser);
-    return true;
+  generateNewLicense: async (plan: string, days: number) => {
+    // Generate format: NEBULA-XXXX-XXXX
+    const randomPart = Math.random().toString(36).substr(2, 8).toUpperCase();
+    const key = `NEBULA-${randomPart.slice(0,4)}-${randomPart.slice(4,8)}`;
+    
+    const success = await createLicenseInDB(key, plan, days);
+    if (success) {
+        // Refresh local cache
+        const licenses = await fetchAllLicenses();
+        set({ adminLicenses: licenses });
+    }
+  },
+
+  fetchAdminLicenses: async () => {
+      const licenses = await fetchAllLicenses();
+      set({ adminLicenses: licenses });
   },
 
   initialize: async () => {

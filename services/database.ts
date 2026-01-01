@@ -1,6 +1,6 @@
 
 import { neon } from '@neondatabase/serverless';
-import { Channel, User } from '../types';
+import { Channel, User, LicenseKey } from '../types';
 import { CONFIG } from '../config';
 
 // Helper to get DB client
@@ -25,12 +25,11 @@ export const initializeSchema = async (): Promise<{ success: boolean; error?: st
 
     try {
         // Log masked URL for debugging connection issues
-        const maskedUrl = CONFIG.DATABASE_URL.replace(/:[^:@]+@/, ':***@');
-        console.log(`DB: Initializing connection... URL: ${maskedUrl}`);
-        
-        if (CONFIG.DATABASE_URL.includes("channel_binding")) {
-            console.warn("DB WARNING: 'channel_binding' detected in URL. This may cause fetch errors in browsers.");
-        }
+        // We print the params specifically to prove they are clean
+        const urlObj = new URL(CONFIG.DATABASE_URL);
+        const params = urlObj.searchParams.toString();
+        const maskedHost = urlObj.host;
+        console.log(`DB: Connecting to ${maskedHost} | Params: ${params || '(none)'}`);
         
         // 1. Test basic connectivity first
         await sql`SELECT 1`;
@@ -68,14 +67,26 @@ export const initializeSchema = async (): Promise<{ success: boolean; error?: st
                 description TEXT
             )
         `;
+
+        // Create License Table
+        await sql`
+            CREATE TABLE IF NOT EXISTS license_keys (
+                id TEXT PRIMARY KEY,
+                key_code TEXT UNIQUE NOT NULL,
+                plan_name TEXT NOT NULL,
+                duration_days INTEGER NOT NULL,
+                status TEXT DEFAULT 'unused',
+                created_at BIGINT NOT NULL
+            )
+        `;
         
         console.log("DB: Schema verified and ready.");
         return { success: true };
     } catch (err: any) {
         console.error("DB Init Error:", err);
         let msg = err.message || "Unknown Database Error";
-        if (msg.includes("Invalid name")) {
-            msg += " (Likely caused by malformed URL or 'channel_binding' param)";
+        if (msg.includes("Invalid name") || msg.includes("fetch")) {
+            msg = "Browser Security Block. Ensure 'channel_binding' is removed from URL. (Auto-fix attempted)";
         }
         return { success: false, error: msg };
     }
@@ -136,6 +147,67 @@ export const deleteChannelFromDB = async (id: string): Promise<boolean> => {
         return false;
     }
 }
+
+// --- LICENSE OPERATIONS ---
+
+export const createLicenseInDB = async (key: string, plan: string, days: number): Promise<boolean> => {
+    const sql = getSql();
+    if (!sql) return false;
+    try {
+        const id = 'lic_' + Math.random().toString(36).substr(2, 9);
+        await sql`
+            INSERT INTO license_keys (id, key_code, plan_name, duration_days, status, created_at)
+            VALUES (${id}, ${key}, ${plan}, ${days}, 'unused', ${Date.now()})
+        `;
+        return true;
+    } catch (err) {
+        console.error("License Creation Error:", err);
+        return false;
+    }
+};
+
+export const fetchAllLicenses = async (): Promise<LicenseKey[]> => {
+    const sql = getSql();
+    if (!sql) return [];
+    try {
+        const result = await sql`SELECT * FROM license_keys ORDER BY created_at DESC`;
+        return result.map((row: any) => ({
+            id: row.id,
+            key: row.key_code,
+            plan: row.plan_name,
+            durationDays: row.duration_days,
+            status: row.status,
+            createdAt: Number(row.created_at)
+        }));
+    } catch (err) {
+        console.error("Fetch Licenses Error:", err);
+        return [];
+    }
+};
+
+export const redeemLicenseKey = async (key: string): Promise<{valid: boolean, plan?: string, days?: number}> => {
+    const sql = getSql();
+    if (!sql) return { valid: false };
+
+    try {
+        // Check for special hardcoded keys first
+        if (key === 'LIVE-FREE-2025') return { valid: true, plan: 'Nebula Access Pass', days: 365 };
+
+        // Check DB
+        const result = await sql`SELECT * FROM license_keys WHERE key_code = ${key} AND status = 'unused'`;
+        
+        if (result.length > 0) {
+            const lic = result[0];
+            // Mark as used
+            await sql`UPDATE license_keys SET status = 'redeemed' WHERE id = ${lic.id}`;
+            return { valid: true, plan: lic.plan_name, days: lic.duration_days };
+        }
+        return { valid: false };
+    } catch (err) {
+        console.error("Redeem Error:", err);
+        return { valid: false };
+    }
+};
 
 // --- USER / AUTH OPERATIONS ---
 

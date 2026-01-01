@@ -1,25 +1,30 @@
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { useStore } from '../store';
 import { Channel } from '../types';
-import { ShieldAlert, Server, Activity, Users, Trash2, Edit, Plus, Database, AlertTriangle, CheckCircle, ArrowLeft, Upload, FileText, PlayCircle, PlusCircle, MonitorPlay, Image as ImageIcon, Tag, Link as LinkIcon, Info } from 'lucide-react';
+import { format } from 'date-fns';
+import { 
+    ShieldAlert, Activity, Users, Database, AlertTriangle, 
+    ArrowLeft, MonitorPlay, Key, FileText, Upload, Plus, 
+    Trash2, CheckCircle, Tag, Link as LinkIcon, Info, Server, 
+    Image as ImageIcon, RefreshCw, Copy
+} from 'lucide-react';
 
 export const AdminPanel: React.FC = () => {
-  const { channels, user, removeChannel, setView, importChannels } = useStore();
-  const [activeTab, setActiveTab] = useState<'overview' | 'channels' | 'import' | 'create'>('overview');
+  const { channels, user, removeChannel, setView, importChannels, adminLicenses, fetchAdminLicenses, generateNewLicense } = useStore();
   
-  // M3U Import State
+  // Navigation State: 'dashboard' | 'streams' | 'licenses'
+  const [activeModule, setActiveModule] = useState<'dashboard' | 'streams' | 'licenses'>('dashboard');
+
+  // --- Sub-States for Streams Module ---
+  const [streamTab, setStreamTab] = useState<'list' | 'create' | 'import'>('list');
   const [m3uInput, setM3uInput] = useState('');
   const [parsedChannels, setParsedChannels] = useState<Channel[]>([]);
+  const [manualForm, setManualForm] = useState({ name: '', logo: '', category: '', provider: 'Custom', streamUrl: '', description: '' });
 
-  // Manual Creation State
-  const [manualForm, setManualForm] = useState({
-      name: '',
-      logo: '',
-      category: '',
-      provider: 'Custom',
-      streamUrl: '',
-      description: ''
-  });
+  // --- Sub-States for License Module ---
+  const [licenseForm, setLicenseForm] = useState({ plan: 'Standard Access', days: 30 });
+  const [generatedKey, setGeneratedKey] = useState<string | null>(null);
 
   // Security Gate
   if (user?.role !== 'admin') {
@@ -27,15 +32,14 @@ export const AdminPanel: React.FC = () => {
       <div className="w-full h-full flex flex-col items-center justify-center bg-black text-red-500 p-8">
         <ShieldAlert className="w-24 h-24 mb-4 animate-pulse" />
         <h1 className="text-4xl font-black uppercase tracking-widest">Access Denied</h1>
-        <p className="font-mono text-sm mt-2">Insufficient Clearance Level. This incident will be reported.</p>
         <button onClick={() => setView('home')} className="mt-8 px-6 py-2 bg-stone-800 rounded-lg text-white">Return Home</button>
       </div>
     );
   }
 
+  // --- LOGIC: Stream Management ---
   const parseM3U = () => {
       if (!m3uInput) return;
-
       const lines = m3uInput.split('\n');
       const newChannels: Channel[] = [];
       let currentInfo: Partial<Channel> = {};
@@ -43,32 +47,18 @@ export const AdminPanel: React.FC = () => {
       lines.forEach((line) => {
           line = line.trim();
           if (line.startsWith('#EXTINF')) {
-              // Extract metadata
               const logoMatch = line.match(/tvg-logo="([^"]*)"/);
               const groupMatch = line.match(/group-title="([^"]*)"/);
               const nameMatch = line.match(/,(.*)$/);
               
-              const logo = logoMatch ? logoMatch[1] : '';
-              const category = groupMatch ? groupMatch[1] : 'Uncategorized';
-              const name = nameMatch ? nameMatch[1].trim() : 'Unknown Stream';
-
-              // Map colors based on category loosely
-              let color = 'bg-stone-800';
-              if (category.toLowerCase().includes('sport')) color = 'bg-gradient-to-br from-red-700 to-red-500';
-              else if (category.toLowerCase().includes('news')) color = 'bg-gradient-to-br from-red-600 to-orange-600';
-              else if (category.toLowerCase().includes('movie')) color = 'bg-gradient-to-br from-purple-600 to-blue-600';
-              else if (category.toLowerCase().includes('kid')) color = 'bg-gradient-to-br from-pink-500 to-orange-400';
-              else if (category.toLowerCase().includes('bangla')) color = 'bg-gradient-to-br from-green-600 to-emerald-600';
-
               currentInfo = {
-                  name,
-                  logo,
-                  category,
-                  color,
-                  provider: 'IPTV Stream'
+                  name: nameMatch ? nameMatch[1].trim() : 'Unknown Stream',
+                  logo: logoMatch ? logoMatch[1] : '',
+                  category: groupMatch ? groupMatch[1] : 'Uncategorized',
+                  provider: 'IPTV Stream',
+                  color: 'bg-stone-800'
               };
           } else if (line.startsWith('http')) {
-              // Extract URL and finalize channel
               if (currentInfo.name) {
                   newChannels.push({
                       id: 'imp_' + Math.random().toString(36).substr(2, 9),
@@ -77,11 +67,11 @@ export const AdminPanel: React.FC = () => {
                       logo: currentInfo.logo || 'TV',
                       category: currentInfo.category!,
                       provider: 'IPTV',
-                      color: currentInfo.color!,
+                      color: currentInfo.color || 'bg-stone-800',
                       description: `Live stream from ${currentInfo.category}`,
                       streamUrl: line,
                   });
-                  currentInfo = {}; // Reset
+                  currentInfo = {};
               }
           }
       });
@@ -91,29 +81,14 @@ export const AdminPanel: React.FC = () => {
   const handleImport = () => {
       if (parsedChannels.length > 0) {
           importChannels(parsedChannels);
-          alert(`Successfully imported ${parsedChannels.length} channels.`);
           setM3uInput('');
           setParsedChannels([]);
-          setActiveTab('channels');
+          setStreamTab('list');
       }
   };
 
   const handleManualSubmit = (e: React.FormEvent) => {
       e.preventDefault();
-      if (!manualForm.name || !manualForm.streamUrl) {
-          alert("Name and Stream URL are required.");
-          return;
-      }
-
-      // Determine color based on category
-      const cat = manualForm.category.toLowerCase();
-      let color = 'bg-gradient-to-br from-stone-700 to-stone-600';
-      if (cat.includes('sport')) color = 'bg-gradient-to-br from-red-700 to-red-500';
-      else if (cat.includes('news')) color = 'bg-gradient-to-br from-red-600 to-orange-600';
-      else if (cat.includes('movie')) color = 'bg-gradient-to-br from-purple-600 to-blue-600';
-      else if (cat.includes('kid')) color = 'bg-gradient-to-br from-pink-500 to-orange-400';
-      else if (cat.includes('music')) color = 'bg-gradient-to-br from-rose-500 to-pink-600';
-
       const newChannel: Channel = {
           id: 'man_' + Math.random().toString(36).substr(2, 9),
           number: 'MAN',
@@ -121,426 +96,331 @@ export const AdminPanel: React.FC = () => {
           logo: manualForm.logo || manualForm.name.substring(0, 2).toUpperCase(),
           category: manualForm.category || 'General',
           provider: manualForm.provider,
-          color: color,
-          description: manualForm.description || 'Manually added channel.',
+          color: 'bg-stone-800',
+          description: manualForm.description || 'Manual channel',
           streamUrl: manualForm.streamUrl
       };
-
       importChannels([newChannel]);
-      alert(`Channel "${newChannel.name}" created successfully.`);
-      
-      // Reset form
-      setManualForm({
-          name: '',
-          logo: '',
-          category: '',
-          provider: 'Custom',
-          streamUrl: '',
-          description: ''
-      });
-      setActiveTab('channels');
+      setManualForm({ name: '', logo: '', category: '', provider: 'Custom', streamUrl: '', description: '' });
+      setStreamTab('list');
   };
 
-  return (
-    <div className="w-full h-full flex flex-col bg-stone-950 text-stone-200 overflow-hidden relative">
-      {/* Background Matrix Effect */}
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(12,10,9,0.9),rgba(12,10,9,0.9)),url('https://media.istockphoto.com/id/1183318269/vector/hud-ui-gui-future-futuristic-screen-system-virtual-reality.jpg?s=612x612&w=0&k=20&c=L_oYx4pGzFq7tHkQzE_gWzJg_p_1y_q_x_x_x_x')] bg-cover bg-center opacity-10 pointer-events-none" />
+  // --- LOGIC: License Management ---
+  const handleGenerateLicense = async () => {
+      await generateNewLicense(licenseForm.plan, licenseForm.days);
+      setGeneratedKey("Key generated successfully."); // Ideally, fetch the latest, but list updates automatically via store
+      setTimeout(() => setGeneratedKey(null), 3000);
+  };
 
-      {/* Header */}
-      <div className="p-6 border-b border-red-900/30 bg-stone-900/50 backdrop-blur-xl flex flex-col md:flex-row justify-between items-start md:items-center z-10 gap-4">
-        <div className="flex items-center space-x-4">
-            {/* Mobile Back Button */}
-            <button onClick={() => setView('home')} className="md:hidden p-2 bg-stone-800 rounded-lg text-stone-400">
-                <ArrowLeft className="w-5 h-5" />
-            </button>
-            <div className="w-12 h-12 bg-red-600/20 border border-red-500 rounded-lg flex items-center justify-center">
-                <ShieldAlert className="w-6 h-6 text-red-500" />
-            </div>
-            <div>
-                <h1 className="text-xl md:text-2xl font-black text-white tracking-widest uppercase">Command Center</h1>
-                <p className="text-xs font-mono text-red-400 hidden md:block">ADMINISTRATOR: {user.name.toUpperCase()}</p>
-            </div>
-        </div>
-        <div className="flex space-x-2 w-full md:w-auto overflow-x-auto no-scrollbar">
-            <button 
-                onClick={() => setActiveTab('overview')}
-                className={`flex-1 md:flex-none px-4 py-2 rounded text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap ${activeTab === 'overview' ? 'bg-red-600 text-white' : 'bg-stone-900 border border-stone-800 text-stone-500 hover:text-white'}`}
-            >
-                System
-            </button>
-            <button 
-                onClick={() => setActiveTab('channels')}
-                className={`flex-1 md:flex-none px-4 py-2 rounded text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap ${activeTab === 'channels' ? 'bg-red-600 text-white' : 'bg-stone-900 border border-stone-800 text-stone-500 hover:text-white'}`}
-            >
-                Streams
-            </button>
-            <button 
-                onClick={() => setActiveTab('create')}
-                className={`flex-1 md:flex-none px-4 py-2 rounded text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap ${activeTab === 'create' ? 'bg-red-600 text-white' : 'bg-stone-900 border border-stone-800 text-stone-500 hover:text-white'}`}
-            >
-                Create
-            </button>
-             <button 
-                onClick={() => setActiveTab('import')}
-                className={`flex-1 md:flex-none px-4 py-2 rounded text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap ${activeTab === 'import' ? 'bg-red-600 text-white' : 'bg-stone-900 border border-stone-800 text-stone-500 hover:text-white'}`}
-            >
-                Import
-            </button>
-        </div>
-      </div>
+  const copyToClipboard = (text: string) => {
+      navigator.clipboard.writeText(text);
+      alert("Copied: " + text);
+  };
 
-      {/* Content Area */}
-      <div className="flex-1 overflow-y-auto p-4 md:p-10 z-10 custom-scrollbar">
-        
-        {activeTab === 'overview' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 animate-fade-in-up">
-                {/* Stats Cards */}
-                <div className="bg-stone-900/80 border border-stone-800 p-6 rounded-2xl relative overflow-hidden group">
-                    <div className="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                        <Activity className="w-24 h-24 text-green-500" />
-                    </div>
-                    <div className="flex items-center space-x-2 mb-4 text-green-500">
-                        <Server className="w-5 h-5" />
-                        <span className="text-xs font-bold uppercase tracking-widest">System Status</span>
-                    </div>
-                    <h3 className="text-4xl font-black text-white">ONLINE</h3>
-                    <p className="text-stone-500 text-xs mt-2 font-mono">Uptime: 482h 12m</p>
+  // Fetch licenses when entering module
+  useEffect(() => {
+      if (activeModule === 'licenses') {
+          fetchAdminLicenses();
+      }
+  }, [activeModule]);
+
+
+  // --- VIEW: Toolbox Dashboard (Root) ---
+  if (activeModule === 'dashboard') {
+      return (
+        <div className="w-full h-full flex flex-col bg-stone-950 p-6 md:p-12 overflow-y-auto custom-scrollbar relative">
+             <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-20 pointer-events-none" />
+             
+             {/* Header */}
+             <div className="flex justify-between items-center mb-12 relative z-10">
+                <div>
+                    <h1 className="text-4xl font-black text-white tracking-tighter mb-2">ADMIN<span className="text-orange-600">TOOLBOX</span></h1>
+                    <p className="text-stone-500 font-mono text-sm">SYSTEM INTEGRITY: NORMAL // USER: {user.name.toUpperCase()}</p>
                 </div>
+                <button onClick={() => setView('home')} className="px-6 py-3 bg-stone-900 border border-stone-800 text-stone-400 hover:text-white hover:border-orange-500 transition-all rounded-xl font-bold uppercase tracking-widest text-xs">
+                    Exit Console
+                </button>
+             </div>
 
-                <div className="bg-stone-900/80 border border-stone-800 p-6 rounded-2xl relative overflow-hidden group">
-                     <div className="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                        <Users className="w-24 h-24 text-blue-500" />
-                    </div>
-                    <div className="flex items-center space-x-2 mb-4 text-blue-500">
-                        <Users className="w-5 h-5" />
-                        <span className="text-xs font-bold uppercase tracking-widest">Active Users</span>
-                    </div>
-                    <h3 className="text-4xl font-black text-white">8,492</h3>
-                    <p className="text-stone-500 text-xs mt-2 font-mono">Peak: 12,300 @ 20:00</p>
-                </div>
-
-                <div className="bg-stone-900/80 border border-stone-800 p-6 rounded-2xl relative overflow-hidden group">
-                    <div className="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                        <Database className="w-24 h-24 text-orange-500" />
-                    </div>
-                    <div className="flex items-center space-x-2 mb-4 text-orange-500">
-                        <Database className="w-5 h-5" />
-                        <span className="text-xs font-bold uppercase tracking-widest">Channels</span>
-                    </div>
-                    <h3 className="text-4xl font-black text-white">{channels.length}</h3>
-                    <p className="text-stone-500 text-xs mt-2 font-mono">Bandwidth: 4.2 TB/s</p>
-                </div>
-
-                <div className="bg-stone-900/80 border-2 border-red-900/30 p-6 rounded-2xl relative overflow-hidden group">
-                     <div className="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                        <AlertTriangle className="w-24 h-24 text-red-500" />
-                    </div>
-                    <div className="flex items-center space-x-2 mb-4 text-red-500">
-                        <AlertTriangle className="w-5 h-5" />
-                        <span className="text-xs font-bold uppercase tracking-widest">Alerts</span>
-                    </div>
-                    <h3 className="text-4xl font-black text-white">0</h3>
-                    <p className="text-stone-500 text-xs mt-2 font-mono">System Nominal</p>
-                </div>
-
-                {/* Server Logs Mockup */}
-                <div className="md:col-span-2 lg:col-span-4 bg-black border border-stone-800 rounded-2xl p-6 font-mono text-xs text-stone-400">
-                    <h4 className="text-white font-bold mb-4 flex items-center">
-                        <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse mr-2"></span>
-                        Live Kernel Logs
-                    </h4>
-                    <div className="space-y-1 h-32 overflow-y-auto custom-scrollbar">
-                        <p>[20:14:02] <span className="text-blue-400">INFO</span> Connection established from 192.168.1.12</p>
-                        <p>[20:14:05] <span className="text-orange-400">WARN</span> Latency spike detected on Node US-EAST-4</p>
-                        <p>[20:14:06] <span className="text-blue-400">INFO</span> Optimized routing protocols initiated...</p>
-                        <p>[20:14:10] <span className="text-green-400">SUCCESS</span> Stream ID #a2 buffered successfully (4k/60fps)</p>
-                        <p>[20:14:12] <span className="text-blue-400">INFO</span> User Auth validation passed for session ID x892</p>
-                    </div>
-                </div>
-            </div>
-        )}
-
-        {activeTab === 'channels' && (
-            <div className="space-y-6 animate-fade-in-up">
-                 <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-xl font-bold text-white">Active Broadcasting Streams</h2>
-                    <button onClick={() => setActiveTab('create')} className="flex items-center px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition-all">
-                        <Plus className="w-4 h-4 mr-2" /> Add Channel
-                    </button>
+             {/* Cards Grid */}
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 relative z-10">
+                 
+                 {/* Card 1: Stream Command */}
+                 <div 
+                    onClick={() => setActiveModule('streams')}
+                    className="group bg-stone-900/60 border border-stone-800 hover:border-orange-500 hover:bg-stone-900 p-8 rounded-3xl cursor-pointer transition-all duration-300 relative overflow-hidden shadow-2xl"
+                 >
+                     <div className="absolute right-0 top-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity">
+                         <MonitorPlay className="w-40 h-40 text-orange-500" />
+                     </div>
+                     <div className="w-16 h-16 bg-orange-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg shadow-orange-600/20 group-hover:scale-110 transition-transform">
+                         <Activity className="w-8 h-8 text-white" />
+                     </div>
+                     <h2 className="text-2xl font-black text-white mb-2">Stream Command</h2>
+                     <p className="text-stone-400 text-sm mb-6 max-w-sm">Manage active broadcasts, inject manual streams, or bulk import via M3U playlists.</p>
+                     
+                     <div className="flex items-center space-x-4 text-xs font-mono text-stone-500">
+                         <span className="flex items-center"><Database className="w-3 h-3 mr-1" /> {channels.length} Active</span>
+                         <span className="flex items-center"><Server className="w-3 h-3 mr-1" /> Online</span>
+                     </div>
                  </div>
 
-                 <div className="bg-stone-900/50 border border-stone-800 rounded-2xl overflow-x-auto">
-                    <table className="w-full text-left min-w-[600px]">
-                        <thead className="bg-stone-950 text-stone-500 font-bold uppercase text-[10px] tracking-widest">
-                            <tr>
-                                <th className="p-4">Status</th>
-                                <th className="p-4">Channel Name</th>
-                                <th className="p-4">Category</th>
-                                <th className="p-4">Stream Info</th>
-                                <th className="p-4 text-right">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-stone-800 text-sm">
-                            {channels.map((channel) => (
-                                <tr key={channel.id} className="hover:bg-stone-800/50 transition-colors group">
-                                    <td className="p-4">
-                                        <div className="flex items-center text-green-500 text-xs font-bold">
-                                            <CheckCircle className="w-4 h-4 mr-2" /> Active
-                                        </div>
-                                    </td>
-                                    <td className="p-4">
-                                        <div className="flex items-center space-x-3">
-                                            <div className="w-8 h-8 rounded bg-stone-700 overflow-hidden flex items-center justify-center">
-                                                {channel.logo.startsWith('http') ? (
-                                                    <img src={channel.logo} alt="L" className="w-full h-full object-cover" />
-                                                ) : (
-                                                    <span className="text-[10px] font-bold text-white">{channel.logo}</span>
-                                                )}
-                                            </div>
-                                            <span className="font-bold text-white">{channel.name}</span>
-                                        </div>
-                                    </td>
-                                    <td className="p-4">
-                                        <span className="px-2 py-1 bg-stone-800 rounded text-xs text-stone-300">{channel.category}</span>
-                                    </td>
-                                    <td className="p-4 text-stone-500 text-xs truncate max-w-[150px]">
-                                        {channel.streamUrl ? 'HLS Stream' : 'Mock Source'}
-                                    </td>
-                                    <td className="p-4 text-right">
-                                        <div className="flex justify-end space-x-2 opacity-50 group-hover:opacity-100 transition-opacity">
-                                            <button 
-                                                onClick={() => removeChannel(channel.id)}
-                                                className="p-2 hover:bg-red-900/30 rounded text-stone-400 hover:text-red-500 transition-colors"
-                                                title="Terminate Stream"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                 {/* Card 2: License Forge */}
+                 <div 
+                    onClick={() => setActiveModule('licenses')}
+                    className="group bg-stone-900/60 border border-stone-800 hover:border-green-500 hover:bg-stone-900 p-8 rounded-3xl cursor-pointer transition-all duration-300 relative overflow-hidden shadow-2xl"
+                 >
+                     <div className="absolute right-0 top-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity">
+                         <Key className="w-40 h-40 text-green-500" />
+                     </div>
+                     <div className="w-16 h-16 bg-green-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg shadow-green-600/20 group-hover:scale-110 transition-transform">
+                         <Key className="w-8 h-8 text-white" />
+                     </div>
+                     <h2 className="text-2xl font-black text-white mb-2">License Forge</h2>
+                     <p className="text-stone-400 text-sm mb-6 max-w-sm">Generate new access keys, track redemption status, and manage user subscription plans.</p>
+                     
+                     <div className="flex items-center space-x-4 text-xs font-mono text-stone-500">
+                         <span className="flex items-center"><Users className="w-3 h-3 mr-1" /> Access Control</span>
+                         <span className="flex items-center text-green-500"><CheckCircle className="w-3 h-3 mr-1" /> Secure</span>
+                     </div>
                  </div>
-            </div>
-        )}
 
-        {/* --- MANUAL CREATE TAB --- */}
-        {activeTab === 'create' && (
-            <div className="space-y-6 animate-fade-in-up">
-                 <div className="bg-stone-900/50 border border-stone-800 rounded-2xl p-6 lg:p-10">
-                     <h2 className="text-xl font-bold text-white mb-6 flex items-center">
-                        <PlusCircle className="w-5 h-5 mr-2 text-green-500" />
-                        Manual Stream Injection
-                     </h2>
-
-                     <div className="flex flex-col lg:flex-row gap-12">
-                         {/* Form */}
-                         <form onSubmit={handleManualSubmit} className="flex-1 space-y-6">
-                             
-                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                 <div className="space-y-2">
-                                     <label className="text-xs font-bold text-stone-500 uppercase tracking-wider flex items-center">
-                                         <MonitorPlay className="w-3 h-3 mr-1" /> Channel Name <span className="text-red-500 ml-1">*</span>
-                                     </label>
-                                     <input 
-                                        required
-                                        type="text"
-                                        value={manualForm.name}
-                                        onChange={e => setManualForm({...manualForm, name: e.target.value})}
-                                        className="w-full bg-black border border-stone-800 text-white px-4 py-3 rounded-xl focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 transition-all placeholder:text-stone-700"
-                                        placeholder="e.g. ESPN HD"
-                                     />
-                                 </div>
-                                 <div className="space-y-2">
-                                     <label className="text-xs font-bold text-stone-500 uppercase tracking-wider flex items-center">
-                                         <Tag className="w-3 h-3 mr-1" /> Category
-                                     </label>
-                                     <input 
-                                        type="text"
-                                        value={manualForm.category}
-                                        onChange={e => setManualForm({...manualForm, category: e.target.value})}
-                                        className="w-full bg-black border border-stone-800 text-white px-4 py-3 rounded-xl focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 transition-all placeholder:text-stone-700"
-                                        placeholder="e.g. Sports"
-                                     />
-                                 </div>
-                             </div>
-
-                             <div className="space-y-2">
-                                 <label className="text-xs font-bold text-stone-500 uppercase tracking-wider flex items-center">
-                                     <LinkIcon className="w-3 h-3 mr-1" /> Stream URL (M3U8) <span className="text-red-500 ml-1">*</span>
-                                 </label>
-                                 <input 
-                                    required
-                                    type="text"
-                                    value={manualForm.streamUrl}
-                                    onChange={e => setManualForm({...manualForm, streamUrl: e.target.value})}
-                                    className="w-full bg-black border border-stone-800 text-white px-4 py-3 rounded-xl focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 transition-all placeholder:text-stone-700 font-mono text-sm"
-                                    placeholder="https://server.com/live/stream.m3u8"
-                                 />
-                             </div>
-
-                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                 <div className="space-y-2">
-                                     <label className="text-xs font-bold text-stone-500 uppercase tracking-wider flex items-center">
-                                         <ImageIcon className="w-3 h-3 mr-1" /> Logo URL
-                                     </label>
-                                     <input 
-                                        type="text"
-                                        value={manualForm.logo}
-                                        onChange={e => setManualForm({...manualForm, logo: e.target.value})}
-                                        className="w-full bg-black border border-stone-800 text-white px-4 py-3 rounded-xl focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 transition-all placeholder:text-stone-700 font-mono text-sm"
-                                        placeholder="https://..."
-                                     />
-                                 </div>
-                                 <div className="space-y-2">
-                                     <label className="text-xs font-bold text-stone-500 uppercase tracking-wider flex items-center">
-                                         <Server className="w-3 h-3 mr-1" /> Provider
-                                     </label>
-                                     <input 
-                                        type="text"
-                                        value={manualForm.provider}
-                                        onChange={e => setManualForm({...manualForm, provider: e.target.value})}
-                                        className="w-full bg-black border border-stone-800 text-white px-4 py-3 rounded-xl focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 transition-all placeholder:text-stone-700"
-                                        placeholder="Custom Provider"
-                                     />
-                                 </div>
-                             </div>
-
-                             <div className="space-y-2">
-                                 <label className="text-xs font-bold text-stone-500 uppercase tracking-wider flex items-center">
-                                     <Info className="w-3 h-3 mr-1" /> Description
-                                 </label>
-                                 <textarea 
-                                    value={manualForm.description}
-                                    onChange={e => setManualForm({...manualForm, description: e.target.value})}
-                                    className="w-full bg-black border border-stone-800 text-white px-4 py-3 rounded-xl focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 transition-all placeholder:text-stone-700 min-h-[100px]"
-                                    placeholder="Brief description of the channel..."
-                                 />
-                             </div>
-
-                             <div className="pt-4">
-                                 <button 
-                                    type="submit"
-                                    className="w-full py-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white font-black rounded-xl shadow-lg hover:shadow-green-500/20 transition-all uppercase tracking-widest text-sm"
-                                 >
-                                     Deploy Channel
-                                 </button>
-                             </div>
-                         </form>
-
-                         {/* Preview */}
-                         <div className="w-full lg:w-80 flex flex-col items-center">
-                             <div className="mb-4 text-xs font-bold text-stone-500 uppercase tracking-widest">Live Preview</div>
-                             
-                             {/* Mock Card */}
-                             <div className="w-full aspect-[16/9] bg-stone-900 border border-stone-800 rounded-xl overflow-hidden relative group shadow-2xl">
-                                 <div className="absolute inset-0 flex items-center justify-center p-6 bg-gradient-to-br from-stone-800 to-stone-900">
-                                    {manualForm.logo ? (
-                                        <img src={manualForm.logo} alt="Preview" className="w-full h-full object-contain drop-shadow-lg" />
-                                    ) : (
-                                        <span className="text-4xl font-black text-stone-700">{manualForm.name.slice(0,2).toUpperCase() || 'TV'}</span>
-                                    )}
-                                 </div>
-                                 <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-60" />
-                                 <div className="absolute bottom-0 left-0 right-0 p-3">
-                                    <p className="text-[10px] font-bold text-green-500 uppercase tracking-widest mb-0.5">{manualForm.category || 'CATEGORY'}</p>
-                                    <h4 className="text-white font-bold leading-tight line-clamp-1">{manualForm.name || 'Channel Name'}</h4>
-                                </div>
-                             </div>
-
-                             <div className="mt-8 p-4 bg-stone-900/50 rounded-xl border border-stone-800 w-full">
-                                 <h4 className="text-xs font-bold text-white mb-2">Configuration Summary</h4>
-                                 <div className="space-y-1 text-[10px] text-stone-400 font-mono">
-                                     <div className="flex justify-between">
-                                         <span>ID:</span>
-                                         <span>AUTO_GEN</span>
-                                     </div>
-                                     <div className="flex justify-between">
-                                         <span>PROTOCOL:</span>
-                                         <span className="text-green-500">HLS/HTTPS</span>
-                                     </div>
-                                     <div className="flex justify-between">
-                                         <span>PROVIDER:</span>
-                                         <span>{manualForm.provider}</span>
-                                     </div>
-                                 </div>
-                             </div>
+                 {/* Card 3: System Stats (Non-clickable summary) */}
+                 <div className="md:col-span-2 bg-black/40 border border-stone-800 p-8 rounded-3xl flex flex-col md:flex-row items-center justify-between">
+                     <div className="flex items-center space-x-6 mb-6 md:mb-0">
+                         <div className="p-4 bg-stone-800 rounded-full">
+                             <Server className="w-6 h-6 text-blue-400" />
+                         </div>
+                         <div>
+                             <h3 className="text-lg font-bold text-white">System Status</h3>
+                             <p className="text-stone-500 text-sm">All systems operational. Database latency: 12ms</p>
+                         </div>
+                     </div>
+                     <div className="flex space-x-8 text-center">
+                         <div>
+                             <div className="text-2xl font-black text-white">4.2 TB</div>
+                             <div className="text-[10px] font-bold text-stone-500 uppercase tracking-widest">Bandwidth</div>
+                         </div>
+                         <div>
+                             <div className="text-2xl font-black text-white">99.9%</div>
+                             <div className="text-[10px] font-bold text-stone-500 uppercase tracking-widest">Uptime</div>
                          </div>
                      </div>
                  </div>
-            </div>
-        )}
 
-        {activeTab === 'import' && (
-            <div className="space-y-6 animate-fade-in-up">
-                <div className="bg-stone-900/50 border border-stone-800 rounded-2xl p-6">
-                    <h2 className="text-xl font-bold text-white mb-4 flex items-center">
-                        <Upload className="w-5 h-5 mr-2 text-orange-500" />
-                        M3U Playlist Importer
-                    </h2>
-                    <p className="text-sm text-stone-400 mb-6">
-                        Paste your M3U8 content below. The system will intelligently analyze metadata, extract logos, categories, and stream URLs.
-                    </p>
-                    
-                    <div className="flex gap-6 flex-col lg:flex-row">
-                        <div className="flex-1">
-                            <textarea
-                                value={m3uInput}
-                                onChange={(e) => setM3uInput(e.target.value)}
-                                className="w-full h-96 bg-black border border-stone-800 rounded-xl p-4 font-mono text-xs text-green-500 focus:outline-none focus:border-orange-500 transition-colors"
-                                placeholder="#EXTM3U..."
-                            />
-                            <button 
-                                onClick={parseM3U}
-                                className="mt-4 w-full py-3 bg-stone-800 hover:bg-stone-700 text-white font-bold rounded-xl transition-colors flex items-center justify-center"
-                            >
-                                <Activity className="w-4 h-4 mr-2" /> Analyze Content
-                            </button>
+             </div>
+        </div>
+      );
+  }
+
+  // --- VIEW: Stream Command Module ---
+  if (activeModule === 'streams') {
+      return (
+        <div className="w-full h-full flex flex-col bg-stone-950">
+             {/* Module Header */}
+             <div className="bg-stone-900 border-b border-stone-800 p-4 flex items-center justify-between shadow-lg z-20">
+                 <div className="flex items-center space-x-4">
+                     <button onClick={() => setActiveModule('dashboard')} className="p-2 hover:bg-stone-800 rounded-lg text-stone-400 hover:text-white transition-colors">
+                         <ArrowLeft className="w-6 h-6" />
+                     </button>
+                     <div className="h-8 w-px bg-stone-700 mx-2" />
+                     <h2 className="text-xl font-black text-white uppercase tracking-wider flex items-center">
+                         <MonitorPlay className="w-5 h-5 mr-3 text-orange-500" />
+                         Stream Manager
+                     </h2>
+                 </div>
+                 
+                 {/* Internal Tabs */}
+                 <div className="flex space-x-1 bg-black p-1 rounded-lg">
+                     <button onClick={() => setStreamTab('list')} className={`px-4 py-2 rounded-md text-xs font-bold uppercase transition-all ${streamTab === 'list' ? 'bg-orange-600 text-white' : 'text-stone-500 hover:text-white'}`}>Active</button>
+                     <button onClick={() => setStreamTab('create')} className={`px-4 py-2 rounded-md text-xs font-bold uppercase transition-all ${streamTab === 'create' ? 'bg-orange-600 text-white' : 'text-stone-500 hover:text-white'}`}>Create</button>
+                     <button onClick={() => setStreamTab('import')} className={`px-4 py-2 rounded-md text-xs font-bold uppercase transition-all ${streamTab === 'import' ? 'bg-orange-600 text-white' : 'text-stone-500 hover:text-white'}`}>Import</button>
+                 </div>
+             </div>
+
+             {/* Module Content */}
+             <div className="flex-1 overflow-y-auto p-6 bg-stone-950 custom-scrollbar">
+                
+                {/* List View */}
+                {streamTab === 'list' && (
+                    <div className="space-y-4">
+                        <div className="bg-orange-900/10 border border-orange-500/20 p-4 rounded-xl flex items-center text-orange-400 text-sm mb-6">
+                            <Info className="w-4 h-4 mr-2" />
+                            Displaying {channels.length} active broadcast signals.
                         </div>
-
-                        <div className="flex-1 flex flex-col">
-                             <div className="flex items-center justify-between mb-4">
-                                 <h3 className="text-sm font-bold text-stone-300 uppercase tracking-wider">Preview ({parsedChannels.length})</h3>
-                                 {parsedChannels.length > 0 && (
-                                     <button 
-                                        onClick={handleImport}
-                                        className="px-4 py-2 bg-gradient-to-r from-orange-600 to-red-600 text-white text-xs font-bold rounded-lg shadow-lg hover:shadow-orange-500/20 transition-all flex items-center"
-                                     >
-                                         <Database className="w-3 h-3 mr-2" /> Save to Database
-                                     </button>
-                                 )}
-                             </div>
-                             
-                             <div className="flex-1 bg-stone-950 border border-stone-800 rounded-xl overflow-hidden overflow-y-auto h-96 custom-scrollbar p-2 space-y-2">
-                                 {parsedChannels.length === 0 ? (
-                                     <div className="h-full flex flex-col items-center justify-center text-stone-600">
-                                         <FileText className="w-8 h-8 mb-2 opacity-50" />
-                                         <span className="text-xs">Waiting for analysis...</span>
-                                     </div>
-                                 ) : (
-                                     parsedChannels.map((ch, idx) => (
-                                         <div key={idx} className="flex items-center p-3 bg-stone-900 rounded-lg border border-stone-800">
-                                              <div className="w-8 h-8 rounded bg-stone-800 mr-3 overflow-hidden">
-                                                  {ch.logo && ch.logo.startsWith('http') ? <img src={ch.logo} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[8px]">IMG</div>}
-                                              </div>
-                                              <div className="flex-1 min-w-0">
-                                                  <div className="text-sm font-bold text-white truncate">{ch.name}</div>
-                                                  <div className="text-[10px] text-stone-500 flex items-center">
-                                                      <span className="bg-stone-800 px-1 rounded mr-2">{ch.category}</span>
-                                                      <span className="truncate max-w-[150px] opacity-50">{ch.streamUrl}</span>
-                                                  </div>
-                                              </div>
-                                         </div>
-                                     ))
-                                 )}
-                             </div>
+                        <div className="grid grid-cols-1 gap-3">
+                            {channels.map(ch => (
+                                <div key={ch.id} className="bg-stone-900 border border-stone-800 p-4 rounded-xl flex items-center justify-between hover:border-stone-600 transition-all group">
+                                    <div className="flex items-center space-x-4">
+                                        <div className="w-10 h-10 bg-black rounded-lg flex items-center justify-center overflow-hidden">
+                                             {ch.logo.startsWith('http') ? <img src={ch.logo} className="w-full h-full object-cover" /> : <span className="text-xs font-bold text-stone-500">{ch.logo}</span>}
+                                        </div>
+                                        <div>
+                                            <h3 className="text-white font-bold">{ch.name}</h3>
+                                            <div className="flex items-center space-x-2 text-xs text-stone-500">
+                                                <span className="bg-stone-800 px-1.5 rounded">{ch.category}</span>
+                                                <span className="font-mono text-[10px]">{ch.id}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button onClick={() => removeChannel(ch.id)} className="p-2 bg-stone-800 text-stone-500 hover:bg-red-900 hover:text-red-500 rounded-lg transition-colors">
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            ))}
                         </div>
                     </div>
-                </div>
-            </div>
-        )}
-      </div>
-    </div>
-  );
+                )}
+
+                {/* Create View */}
+                {streamTab === 'create' && (
+                    <div className="max-w-2xl mx-auto">
+                        <div className="bg-stone-900 border border-stone-800 rounded-2xl p-8">
+                            <h3 className="text-lg font-bold text-white mb-6">Manual Stream Injection</h3>
+                            <form onSubmit={handleManualSubmit} className="space-y-6">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <input required placeholder="Channel Name" value={manualForm.name} onChange={e => setManualForm({...manualForm, name: e.target.value})} className="bg-black border border-stone-700 p-3 rounded-xl text-white focus:border-orange-500 outline-none" />
+                                    <input placeholder="Category" value={manualForm.category} onChange={e => setManualForm({...manualForm, category: e.target.value})} className="bg-black border border-stone-700 p-3 rounded-xl text-white focus:border-orange-500 outline-none" />
+                                </div>
+                                <input required placeholder="Stream URL (M3U8)" value={manualForm.streamUrl} onChange={e => setManualForm({...manualForm, streamUrl: e.target.value})} className="w-full bg-black border border-stone-700 p-3 rounded-xl text-white focus:border-orange-500 outline-none font-mono text-sm" />
+                                <input placeholder="Logo URL" value={manualForm.logo} onChange={e => setManualForm({...manualForm, logo: e.target.value})} className="w-full bg-black border border-stone-700 p-3 rounded-xl text-white focus:border-orange-500 outline-none text-sm" />
+                                <button type="submit" className="w-full py-3 bg-orange-600 hover:bg-orange-500 text-white font-bold rounded-xl transition-all">DEPLOY STREAM</button>
+                            </form>
+                        </div>
+                    </div>
+                )}
+
+                {/* Import View */}
+                {streamTab === 'import' && (
+                    <div className="max-w-4xl mx-auto">
+                        <div className="bg-stone-900 border border-stone-800 rounded-2xl p-6 h-[70vh] flex flex-col">
+                            <textarea 
+                                value={m3uInput} onChange={e => setM3uInput(e.target.value)} 
+                                className="flex-1 bg-black border border-stone-700 rounded-xl p-4 font-mono text-xs text-green-500 focus:outline-none mb-4 resize-none"
+                                placeholder="#EXTM3U..."
+                            />
+                            <div className="flex space-x-4">
+                                <button onClick={parseM3U} className="flex-1 py-3 bg-stone-800 text-white font-bold rounded-xl hover:bg-stone-700">Analyze</button>
+                                {parsedChannels.length > 0 && <button onClick={handleImport} className="flex-1 py-3 bg-green-600 text-white font-bold rounded-xl hover:bg-green-500">Import {parsedChannels.length} Channels</button>}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+             </div>
+        </div>
+      );
+  }
+
+  // --- VIEW: License Forge Module ---
+  if (activeModule === 'licenses') {
+      return (
+        <div className="w-full h-full flex flex-col bg-stone-950">
+             {/* Module Header */}
+             <div className="bg-stone-900 border-b border-stone-800 p-4 flex items-center justify-between shadow-lg z-20">
+                 <div className="flex items-center space-x-4">
+                     <button onClick={() => setActiveModule('dashboard')} className="p-2 hover:bg-stone-800 rounded-lg text-stone-400 hover:text-white transition-colors">
+                         <ArrowLeft className="w-6 h-6" />
+                     </button>
+                     <div className="h-8 w-px bg-stone-700 mx-2" />
+                     <h2 className="text-xl font-black text-white uppercase tracking-wider flex items-center">
+                         <Key className="w-5 h-5 mr-3 text-green-500" />
+                         License Manager
+                     </h2>
+                 </div>
+                 <button onClick={fetchAdminLicenses} className="p-2 bg-stone-800 rounded-lg text-stone-400 hover:text-white"><RefreshCw className="w-4 h-4" /></button>
+             </div>
+
+             <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+                 
+                 {/* Left Panel: Generator */}
+                 <div className="w-full md:w-1/3 bg-stone-900/50 p-8 border-r border-stone-800 flex flex-col">
+                     <h3 className="text-lg font-bold text-white mb-6">Generate New Key</h3>
+                     
+                     <div className="space-y-6 flex-1">
+                         <div className="space-y-2">
+                             <label className="text-xs font-bold text-stone-500 uppercase">Plan Type</label>
+                             <select 
+                                value={licenseForm.plan} 
+                                onChange={e => setLicenseForm({...licenseForm, plan: e.target.value})}
+                                className="w-full bg-black border border-stone-700 p-3 rounded-xl text-white outline-none focus:border-green-500"
+                             >
+                                 <option>Standard Access</option>
+                                 <option>Premium Plus</option>
+                                 <option>Nebula VIP</option>
+                                 <option>Trial (7 Days)</option>
+                             </select>
+                         </div>
+                         <div className="space-y-2">
+                             <label className="text-xs font-bold text-stone-500 uppercase">Duration (Days)</label>
+                             <input 
+                                type="number" 
+                                value={licenseForm.days} 
+                                onChange={e => setLicenseForm({...licenseForm, days: parseInt(e.target.value)})}
+                                className="w-full bg-black border border-stone-700 p-3 rounded-xl text-white outline-none focus:border-green-500"
+                             />
+                         </div>
+
+                         <button onClick={handleGenerateLicense} className="w-full py-4 bg-green-600 hover:bg-green-500 text-white font-bold rounded-xl shadow-lg transition-all flex items-center justify-center">
+                             <Plus className="w-5 h-5 mr-2" /> Generate Key
+                         </button>
+                         
+                         {generatedKey && (
+                            <div className="mt-4 p-4 bg-green-900/20 border border-green-500/50 rounded-xl text-center animate-fade-in-up">
+                                <CheckCircle className="w-8 h-8 text-green-500 mx-auto mb-2" />
+                                <p className="text-green-400 font-bold">Key Created Successfully</p>
+                            </div>
+                         )}
+                     </div>
+                 </div>
+
+                 {/* Right Panel: List */}
+                 <div className="flex-1 bg-stone-950 p-8 overflow-y-auto custom-scrollbar">
+                     <h3 className="text-lg font-bold text-white mb-6">Existing Licenses</h3>
+                     <div className="bg-stone-900 rounded-2xl border border-stone-800 overflow-hidden">
+                         <table className="w-full text-left">
+                             <thead className="bg-black text-stone-500 text-[10px] font-bold uppercase tracking-widest">
+                                 <tr>
+                                     <th className="p-4">Key Code</th>
+                                     <th className="p-4">Plan</th>
+                                     <th className="p-4">Duration</th>
+                                     <th className="p-4">Status</th>
+                                     <th className="p-4">Actions</th>
+                                 </tr>
+                             </thead>
+                             <tbody className="divide-y divide-stone-800 text-sm text-stone-300">
+                                 {adminLicenses.length === 0 ? (
+                                     <tr>
+                                         <td colSpan={5} className="p-8 text-center text-stone-500 italic">No licenses found in database.</td>
+                                     </tr>
+                                 ) : (
+                                     adminLicenses.map((lic) => (
+                                         <tr key={lic.id} className="hover:bg-stone-800/50">
+                                             <td className="p-4 font-mono text-white">{lic.key}</td>
+                                             <td className="p-4">{lic.plan}</td>
+                                             <td className="p-4">{lic.durationDays} Days</td>
+                                             <td className="p-4">
+                                                 <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${lic.status === 'unused' ? 'bg-green-900/30 text-green-500' : 'bg-red-900/30 text-red-500'}`}>
+                                                     {lic.status}
+                                                 </span>
+                                             </td>
+                                             <td className="p-4">
+                                                 <button onClick={() => copyToClipboard(lic.key)} className="p-2 hover:bg-stone-700 rounded text-stone-500 hover:text-white" title="Copy Key">
+                                                     <Copy className="w-4 h-4" />
+                                                 </button>
+                                             </td>
+                                         </tr>
+                                     ))
+                                 )}
+                             </tbody>
+                         </table>
+                     </div>
+                 </div>
+
+             </div>
+        </div>
+      );
+  }
+
+  return null;
 };

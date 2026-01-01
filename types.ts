@@ -8,6 +8,16 @@ export interface License {
     planName: string;
 }
 
+// Admin facing license key data
+export interface LicenseKey {
+    id: string;
+    key: string;
+    plan: string;
+    durationDays: number;
+    status: 'unused' | 'redeemed';
+    createdAt: number;
+}
+
 export interface User {
   id: string;
   name: string;
@@ -55,17 +65,20 @@ export interface AppState {
   programs: Program[];
   isLoading: boolean;
   isDbConfigured: boolean;
-  dbConnectionError?: string; // New field for detailed error reporting
-  
+  dbConnectionError?: string;
+  adminLicenses: LicenseKey[]; // Cache for admin view
+
   // Actions
   login: (email: string, pass: string, role?: 'admin' | 'viewer') => Promise<boolean>;
   logout: () => void;
   updateProfile: (updates: Partial<User>) => void;
-  redeemLicense: (key: string) => Promise<boolean>; 
+  redeemLicense: (key: string) => Promise<boolean>;
+  generateNewLicense: (plan: string, days: number) => Promise<void>;
+  fetchAdminLicenses: () => Promise<void>;
   setView: (view: ViewState) => void;
   setChannel: (channelId: string) => void;
-  removeChannel: (id: string) => void; 
-  importChannels: (newChannels: Channel[]) => void; 
+  removeChannel: (id: string) => void;
+  importChannels: (newChannels: Channel[]) => void;
   togglePlay: () => void;
   initialize: () => void;
 }
