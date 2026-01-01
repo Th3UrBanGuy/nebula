@@ -26,7 +26,6 @@ const WORKING_CHANNELS = [
     color: 'bg-gradient-to-br from-red-700 to-yellow-500', 
     logo: 'https://upload.wikimedia.org/wikipedia/en/thumb/f/f5/Red_Bull_TV_logo.svg/1200px-Red_Bull_TV_logo.svg.png', 
     description: 'Extreme sports, music, and lifestyle entertainment.',
-    // Using a reliable high-motion test stream to simulate sports
     streamUrl: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8' 
   },
   { 
@@ -38,7 +37,6 @@ const WORKING_CHANNELS = [
     color: 'bg-gradient-to-br from-orange-500 to-amber-600', 
     logo: 'https://upload.wikimedia.org/wikipedia/en/thumb/f/f2/Aljazeera_eng.svg/1200px-Aljazeera_eng.svg.png', 
     description: 'Breaking news and in-depth analysis from around the world.',
-    // Using Akamai live test stream as placeholder for news (often Al Jazeera blocks loose embedding)
     streamUrl: 'https://cph-p2p-msl.akamaized.net/hls/live/2000341/test/master.m3u8'
   },
   { 
@@ -72,7 +70,6 @@ const WORKING_CHANNELS = [
     color: 'bg-gradient-to-br from-red-600 to-red-500', 
     logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/aa/TED_three_letter_logo.svg/1200px-TED_three_letter_logo.svg.png', 
     description: 'Ideas worth spreading and future tech.',
-    // Using simple reliable stream
     streamUrl: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8'
   }
 ];
@@ -112,19 +109,32 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   // Auth Actions
-  login: async (email, pass, role) => {
+  login: async (email, pass) => {
     set({ isLoading: true });
     
-    // Attempt Login First
-    let user = await loginUserFromDB(email, pass);
+    // Attempt Login
+    const user = await loginUserFromDB(email, pass);
+    
+    set({ isLoading: false });
 
-    // If no user found, and role is provided, treat as Registration
-    if (!user && role) {
-        const isAdmin = role === 'admin';
-        const randomAvatar = CHARACTER_AVATARS[Math.floor(Math.random() * CHARACTER_AVATARS.length)];
-        const randomCover = COVER_SCENES[Math.floor(Math.random() * COVER_SCENES.length)];
-        
-        const newUser: User = {
+    if (user) {
+        // Persist Session
+        localStorage.setItem('nebula_session', user.id);
+        set({ user });
+        return { success: true };
+    }
+
+    return { success: false, error: "Invalid credentials." };
+  },
+
+  register: async (email, pass, role) => {
+      set({ isLoading: true });
+
+      const isAdmin = role === 'admin';
+      const randomAvatar = CHARACTER_AVATARS[Math.floor(Math.random() * CHARACTER_AVATARS.length)];
+      const randomCover = COVER_SCENES[Math.floor(Math.random() * COVER_SCENES.length)];
+      
+      const newUser: User = {
             id: 'usr_' + Math.random().toString(36).substr(2, 9),
             name: email.split('@')[0],
             email: email,
@@ -134,24 +144,20 @@ export const useStore = create<AppState>((set, get) => ({
             bio: 'New explorer of the Nebula.',
             preferences: { notifications: true, autoplay: true },
             license: isAdmin ? { status: 'active', key: 'ADMIN-OVERRIDE', expiryDate: 9999999999999, planName: 'System Administrator' } : undefined
-        };
+      };
 
-        const success = await registerUserInDB(newUser, pass);
-        if (success) {
-            user = newUser;
-        }
-    }
+      const result = await registerUserInDB(newUser, pass);
+      
+      set({ isLoading: false });
 
-    set({ isLoading: false });
-
-    if (user) {
-        // Persist Session
-        localStorage.setItem('nebula_session', user.id);
-        set({ user });
-        return true;
-    }
-
-    return false;
+      if (result.success) {
+          // Auto login on register
+          localStorage.setItem('nebula_session', newUser.id);
+          set({ user: newUser });
+          return { success: true };
+      }
+      
+      return { success: false, error: result.error || "Registration failed." };
   },
 
   logout: () => {
@@ -222,7 +228,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   initialize: async () => {
-    // 0. Initialize Mock DB
+    // 0. Initialize Mock DB and Migrations
     await initializeSchema();
 
     // 1. Restore Session

@@ -67,7 +67,8 @@ export interface AppState {
   adminLicenses: LicenseKey[]; // Cache for admin view
 
   // Actions
-  login: (email: string, pass: string, role?: 'admin' | 'viewer') => Promise<boolean>;
+  login: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
+  register: (email: string, pass: string, role: 'admin' | 'viewer') => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   updateProfile: (updates: Partial<User>) => void;
   redeemLicense: (key: string) => Promise<boolean>;

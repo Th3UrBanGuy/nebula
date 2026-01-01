@@ -50,10 +50,19 @@ export const initializeSchema = async (): Promise<{ success: boolean; error?: st
         }
 
         // --- MIGRATION FIXES ---
-        // Ensure columns exist if table was created with older schema (Fixes "column does not exist" errors)
+        // Ensure columns exist if table was created with older schema
         try {
             await pool.query(`ALTER TABLE channels ADD COLUMN IF NOT EXISTS number TEXT`);
             await pool.query(`ALTER TABLE channels ADD COLUMN IF NOT EXISTS stream_url TEXT`);
+            await pool.query(`ALTER TABLE channels ADD COLUMN IF NOT EXISTS color TEXT`);
+            
+            // Users table migrations to prevent registration errors
+            await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS license_data JSONB`);
+            await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS preferences JSONB`);
+            await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS cover_image TEXT`);
+            await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT`);
+            await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT`);
+            await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT`);
         } catch (migErr) {
             console.log("Migration Note:", migErr);
         }
@@ -75,12 +84,12 @@ export const fetchChannelsFromDB = async (): Promise<Channel[] | null> => {
 
         return rows.map((row: any) => ({
             id: row.id,
-            number: row.number || '000', // Fallback if column was just added
+            number: row.number || '000',
             name: row.name,
             logo: row.logo,
             provider: row.provider,
             category: row.category,
-            color: row.color,
+            color: row.color || 'bg-stone-800', // Fallback default color
             description: row.description,
             streamUrl: row.stream_url
         }));
@@ -103,8 +112,12 @@ export const addChannelsToDB = async (channels: Channel[]): Promise<boolean> => 
                      number = EXCLUDED.number,
                      name = EXCLUDED.name,
                      logo = EXCLUDED.logo,
+                     category = EXCLUDED.category,
+                     provider = EXCLUDED.provider,
+                     color = EXCLUDED.color,
+                     description = EXCLUDED.description,
                      stream_url = EXCLUDED.stream_url`,
-                    [c.id, c.number, c.name, c.logo, c.provider, c.category, c.color, c.description, c.streamUrl]
+                    [c.id, c.number, c.name, c.logo, c.provider, c.category, c.color || 'bg-stone-800', c.description, c.streamUrl]
                 );
             }
             await client.query('COMMIT');
@@ -204,7 +217,7 @@ export const redeemLicenseKey = async (key: string): Promise<{valid: boolean, pl
 
 // --- USER / AUTH OPERATIONS ---
 
-export const registerUserInDB = async (user: User, password: string): Promise<boolean> => {
+export const registerUserInDB = async (user: User, password: string): Promise<{ success: boolean; error?: string }> => {
     try {
         await pool.query(
             `INSERT INTO users (id, name, email, password, role, avatar, cover_image, bio, preferences, license_data)
@@ -222,10 +235,14 @@ export const registerUserInDB = async (user: User, password: string): Promise<bo
                 JSON.stringify(user.license || null)
             ]
         );
-        return true;
-    } catch (err) {
+        return { success: true };
+    } catch (err: any) {
         console.error("Register Error:", err);
-        return false;
+        // Postgres unique violation code for email constraint
+        if (err.code === '23505') {
+            return { success: false, error: "Email address is already registered." };
+        }
+        return { success: false, error: "Database error: " + err.message };
     }
 };
 

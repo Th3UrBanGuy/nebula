@@ -3,7 +3,7 @@ import { ArrowRight, Lock, Mail, Activity, Hexagon, Shield, AlertTriangle } from
 import { useStore } from '../store';
 
 export const Auth: React.FC = () => {
-  const { login } = useStore();
+  const { login, register } = useStore();
   const [isLogin, setIsLogin] = useState(true);
   const [role, setRole] = useState<'admin' | 'viewer'>('viewer');
   const [email, setEmail] = useState('');
@@ -34,12 +34,18 @@ export const Auth: React.FC = () => {
     setLoading(true);
     setError(null);
     
-    // If logging in, role is undefined (inferred). If registering, use selected role.
-    const success = await login(email, password, isLogin ? undefined : role);
-    
-    if (!success) {
-        setError(isLogin ? "Invalid credentials or user not found." : "Registration failed. User may already exist.");
+    let result;
+
+    if (isLogin) {
+        result = await login(email, password);
+    } else {
+        result = await register(email, password, role);
     }
+    
+    if (!result.success) {
+        setError(result.error || (isLogin ? "Invalid credentials." : "Registration failed."));
+    }
+    
     setLoading(false);
   };
 
