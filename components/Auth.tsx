@@ -3,7 +3,7 @@ import { ArrowRight, Lock, Mail, Fingerprint, Activity, Hexagon, Globe, Shield, 
 import { useStore } from '../store';
 
 export const Auth: React.FC = () => {
-  const { login, isDbConfigured } = useStore();
+  const { login, isDbConfigured, dbConnectionError } = useStore();
   const [isLogin, setIsLogin] = useState(true);
   const [role, setRole] = useState<'admin' | 'viewer'>('viewer');
   const [email, setEmail] = useState('');
@@ -35,7 +35,7 @@ export const Auth: React.FC = () => {
     setError(null);
     
     if (!isDbConfigured) {
-        setError("Database Connection Failed. Check .env configuration.");
+        setError("Database Connection Failed. Check console for details.");
         setLoading(false);
         return;
     }
@@ -108,14 +108,24 @@ export const Auth: React.FC = () => {
                   </p>
               </div>
 
-              {/* DB Connection Alert */}
+              {/* DB Connection Alert with Detailed Error */}
               {!isDbConfigured && (
-                  <div className="mb-6 p-4 bg-orange-900/20 border border-orange-500/50 rounded-xl flex items-start text-orange-400 text-sm font-bold">
-                      <Database className="w-5 h-5 mr-3 shrink-0 mt-0.5" />
-                      <div>
-                          <p className="mb-1">Database Not Connected</p>
-                          <p className="text-xs font-normal opacity-80">Please check your VITE_DATABASE_URL in .env file. The system cannot authenticate without a live database.</p>
+                  <div className="mb-6 p-4 bg-orange-900/10 border border-orange-500/30 rounded-xl flex flex-col items-start text-orange-400 text-sm font-bold animate-pulse">
+                      <div className="flex items-center mb-1">
+                        <Database className="w-5 h-5 mr-3 shrink-0" />
+                        <span>Database Not Connected</span>
                       </div>
+                      <p className="text-xs font-normal opacity-70 mb-3 pl-8">
+                        The system cannot authenticate without a live database.
+                      </p>
+                      {dbConnectionError && (
+                        <div className="w-full bg-black/40 p-3 rounded-lg text-[10px] font-mono text-red-300 break-all border border-red-900/30">
+                            ERROR_LOG: {dbConnectionError}
+                        </div>
+                      )}
+                      <p className="text-[10px] mt-3 opacity-50 pl-1 font-mono uppercase tracking-wide">
+                         ACTION REQUIRED: Verify VITE_DATABASE_URL in Vercel. <br /> Note: Changes require a Redeploy.
+                      </p>
                   </div>
               )}
 

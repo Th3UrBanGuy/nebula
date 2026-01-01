@@ -55,16 +55,17 @@ export interface AppState {
   programs: Program[];
   isLoading: boolean;
   isDbConfigured: boolean;
+  dbConnectionError?: string; // New field for detailed error reporting
   
   // Actions
   login: (email: string, pass: string, role?: 'admin' | 'viewer') => Promise<boolean>;
   logout: () => void;
   updateProfile: (updates: Partial<User>) => void;
-  redeemLicense: (key: string) => Promise<boolean>; // New Action
+  redeemLicense: (key: string) => Promise<boolean>; 
   setView: (view: ViewState) => void;
   setChannel: (channelId: string) => void;
-  removeChannel: (id: string) => void; // Admin Action
-  importChannels: (newChannels: Channel[]) => void; // New Admin Action
+  removeChannel: (id: string) => void; 
+  importChannels: (newChannels: Channel[]) => void; 
   togglePlay: () => void;
   initialize: () => void;
 }

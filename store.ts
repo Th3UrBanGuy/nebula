@@ -83,6 +83,7 @@ export const useStore = create<AppState>((set, get) => ({
   programs: [],
   isLoading: true,
   isDbConfigured: false,
+  dbConnectionError: undefined,
 
   setView: (view: ViewState) => set({ view }),
   
@@ -195,13 +196,13 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   initialize: async () => {
-    // 0. Initialize DB Schema
-    const dbReady = await initializeSchema();
-    set({ isDbConfigured: dbReady });
+    // 0. Initialize DB Schema with Error Capture
+    const { success, error } = await initializeSchema();
+    set({ isDbConfigured: success, dbConnectionError: error });
 
     // 1. Restore Session
     const sessionId = localStorage.getItem('nebula_session');
-    if (sessionId && dbReady) {
+    if (sessionId && success) {
         const user = await getUserById(sessionId);
         if (user) {
             // Check expiry on load
@@ -216,7 +217,7 @@ export const useStore = create<AppState>((set, get) => ({
 
     // 2. Fetch Content
     let channels = null;
-    if (dbReady) {
+    if (success) {
         channels = await fetchChannelsFromDB();
     }
 

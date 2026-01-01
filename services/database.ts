@@ -6,19 +6,30 @@ import { CONFIG } from '../config';
 // Helper to get DB client
 const getSql = () => {
   if (!CONFIG.DATABASE_URL) return null;
-  return neon(CONFIG.DATABASE_URL);
+  try {
+      return neon(CONFIG.DATABASE_URL);
+  } catch (e) {
+      console.error("Neon Client Error:", e);
+      return null;
+  }
 };
 
 // --- INITIALIZATION ---
 
-export const initializeSchema = async (): Promise<boolean> => {
+export const initializeSchema = async (): Promise<{ success: boolean; error?: string }> => {
     const sql = getSql();
     if (!sql) {
         console.warn("DB: No connection string found. Skipping schema initialization.");
-        return false;
+        return { success: false, error: "Missing Connection String" };
     }
 
     try {
+        console.log("DB: Attempting connection to:", CONFIG.DATABASE_URL.replace(/:[^:@]+@/, ':***@'));
+        
+        // 1. Test basic connectivity first
+        await sql`SELECT 1`;
+
+        // 2. Initialize Schema
         await sql`
             CREATE TABLE IF NOT EXISTS users (
                 id TEXT PRIMARY KEY,
@@ -34,11 +45,10 @@ export const initializeSchema = async (): Promise<boolean> => {
             )
         `;
 
-        // Migration: Ensure license_data column exists for older tables
         try {
             await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS license_data JSONB`;
         } catch (e) {
-            // Ignore if column exists or not supported in this dialect (Neon usually supports it)
+            // Ignore migration error
         }
         
         await sql`
@@ -54,10 +64,10 @@ export const initializeSchema = async (): Promise<boolean> => {
         `;
         
         console.log("DB: Schema verified and ready.");
-        return true;
-    } catch (err) {
+        return { success: true };
+    } catch (err: any) {
         console.error("DB Init Error:", err);
-        return false;
+        return { success: false, error: err.message || "Unknown Database Error" };
     }
 };
 
