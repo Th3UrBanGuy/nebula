@@ -1,13 +1,25 @@
 import React, { useState } from 'react';
 import { useStore } from '../store';
 import { Channel } from '../types';
-import { ShieldAlert, Server, Activity, Users, Trash2, Edit, Plus, Database, AlertTriangle, CheckCircle, ArrowLeft, Upload, FileText, PlayCircle } from 'lucide-react';
+import { ShieldAlert, Server, Activity, Users, Trash2, Edit, Plus, Database, AlertTriangle, CheckCircle, ArrowLeft, Upload, FileText, PlayCircle, PlusCircle, MonitorPlay, Image as ImageIcon, Tag, Link as LinkIcon, Info } from 'lucide-react';
 
 export const AdminPanel: React.FC = () => {
   const { channels, user, removeChannel, setView, importChannels } = useStore();
-  const [activeTab, setActiveTab] = useState<'overview' | 'channels' | 'import'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'channels' | 'import' | 'create'>('overview');
+  
+  // M3U Import State
   const [m3uInput, setM3uInput] = useState('');
   const [parsedChannels, setParsedChannels] = useState<Channel[]>([]);
+
+  // Manual Creation State
+  const [manualForm, setManualForm] = useState({
+      name: '',
+      logo: '',
+      category: '',
+      provider: 'Custom',
+      streamUrl: '',
+      description: ''
+  });
 
   // Security Gate
   if (user?.role !== 'admin') {
@@ -86,6 +98,49 @@ export const AdminPanel: React.FC = () => {
       }
   };
 
+  const handleManualSubmit = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!manualForm.name || !manualForm.streamUrl) {
+          alert("Name and Stream URL are required.");
+          return;
+      }
+
+      // Determine color based on category
+      const cat = manualForm.category.toLowerCase();
+      let color = 'bg-gradient-to-br from-stone-700 to-stone-600';
+      if (cat.includes('sport')) color = 'bg-gradient-to-br from-red-700 to-red-500';
+      else if (cat.includes('news')) color = 'bg-gradient-to-br from-red-600 to-orange-600';
+      else if (cat.includes('movie')) color = 'bg-gradient-to-br from-purple-600 to-blue-600';
+      else if (cat.includes('kid')) color = 'bg-gradient-to-br from-pink-500 to-orange-400';
+      else if (cat.includes('music')) color = 'bg-gradient-to-br from-rose-500 to-pink-600';
+
+      const newChannel: Channel = {
+          id: 'man_' + Math.random().toString(36).substr(2, 9),
+          number: 'MAN',
+          name: manualForm.name,
+          logo: manualForm.logo || manualForm.name.substring(0, 2).toUpperCase(),
+          category: manualForm.category || 'General',
+          provider: manualForm.provider,
+          color: color,
+          description: manualForm.description || 'Manually added channel.',
+          streamUrl: manualForm.streamUrl
+      };
+
+      importChannels([newChannel]);
+      alert(`Channel "${newChannel.name}" created successfully.`);
+      
+      // Reset form
+      setManualForm({
+          name: '',
+          logo: '',
+          category: '',
+          provider: 'Custom',
+          streamUrl: '',
+          description: ''
+      });
+      setActiveTab('channels');
+  };
+
   return (
     <div className="w-full h-full flex flex-col bg-stone-950 text-stone-200 overflow-hidden relative">
       {/* Background Matrix Effect */}
@@ -106,7 +161,7 @@ export const AdminPanel: React.FC = () => {
                 <p className="text-xs font-mono text-red-400 hidden md:block">ADMINISTRATOR: {user.name.toUpperCase()}</p>
             </div>
         </div>
-        <div className="flex space-x-2 w-full md:w-auto overflow-x-auto">
+        <div className="flex space-x-2 w-full md:w-auto overflow-x-auto no-scrollbar">
             <button 
                 onClick={() => setActiveTab('overview')}
                 className={`flex-1 md:flex-none px-4 py-2 rounded text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap ${activeTab === 'overview' ? 'bg-red-600 text-white' : 'bg-stone-900 border border-stone-800 text-stone-500 hover:text-white'}`}
@@ -118,6 +173,12 @@ export const AdminPanel: React.FC = () => {
                 className={`flex-1 md:flex-none px-4 py-2 rounded text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap ${activeTab === 'channels' ? 'bg-red-600 text-white' : 'bg-stone-900 border border-stone-800 text-stone-500 hover:text-white'}`}
             >
                 Streams
+            </button>
+            <button 
+                onClick={() => setActiveTab('create')}
+                className={`flex-1 md:flex-none px-4 py-2 rounded text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap ${activeTab === 'create' ? 'bg-red-600 text-white' : 'bg-stone-900 border border-stone-800 text-stone-500 hover:text-white'}`}
+            >
+                Create
             </button>
              <button 
                 onClick={() => setActiveTab('import')}
@@ -203,7 +264,7 @@ export const AdminPanel: React.FC = () => {
             <div className="space-y-6 animate-fade-in-up">
                  <div className="flex justify-between items-center mb-6">
                     <h2 className="text-xl font-bold text-white">Active Broadcasting Streams</h2>
-                    <button onClick={() => setActiveTab('import')} className="flex items-center px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition-all">
+                    <button onClick={() => setActiveTab('create')} className="flex items-center px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition-all">
                         <Plus className="w-4 h-4 mr-2" /> Add Channel
                     </button>
                  </div>
@@ -260,6 +321,153 @@ export const AdminPanel: React.FC = () => {
                             ))}
                         </tbody>
                     </table>
+                 </div>
+            </div>
+        )}
+
+        {/* --- MANUAL CREATE TAB --- */}
+        {activeTab === 'create' && (
+            <div className="space-y-6 animate-fade-in-up">
+                 <div className="bg-stone-900/50 border border-stone-800 rounded-2xl p-6 lg:p-10">
+                     <h2 className="text-xl font-bold text-white mb-6 flex items-center">
+                        <PlusCircle className="w-5 h-5 mr-2 text-green-500" />
+                        Manual Stream Injection
+                     </h2>
+
+                     <div className="flex flex-col lg:flex-row gap-12">
+                         {/* Form */}
+                         <form onSubmit={handleManualSubmit} className="flex-1 space-y-6">
+                             
+                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                 <div className="space-y-2">
+                                     <label className="text-xs font-bold text-stone-500 uppercase tracking-wider flex items-center">
+                                         <MonitorPlay className="w-3 h-3 mr-1" /> Channel Name <span className="text-red-500 ml-1">*</span>
+                                     </label>
+                                     <input 
+                                        required
+                                        type="text"
+                                        value={manualForm.name}
+                                        onChange={e => setManualForm({...manualForm, name: e.target.value})}
+                                        className="w-full bg-black border border-stone-800 text-white px-4 py-3 rounded-xl focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 transition-all placeholder:text-stone-700"
+                                        placeholder="e.g. ESPN HD"
+                                     />
+                                 </div>
+                                 <div className="space-y-2">
+                                     <label className="text-xs font-bold text-stone-500 uppercase tracking-wider flex items-center">
+                                         <Tag className="w-3 h-3 mr-1" /> Category
+                                     </label>
+                                     <input 
+                                        type="text"
+                                        value={manualForm.category}
+                                        onChange={e => setManualForm({...manualForm, category: e.target.value})}
+                                        className="w-full bg-black border border-stone-800 text-white px-4 py-3 rounded-xl focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 transition-all placeholder:text-stone-700"
+                                        placeholder="e.g. Sports"
+                                     />
+                                 </div>
+                             </div>
+
+                             <div className="space-y-2">
+                                 <label className="text-xs font-bold text-stone-500 uppercase tracking-wider flex items-center">
+                                     <LinkIcon className="w-3 h-3 mr-1" /> Stream URL (M3U8) <span className="text-red-500 ml-1">*</span>
+                                 </label>
+                                 <input 
+                                    required
+                                    type="text"
+                                    value={manualForm.streamUrl}
+                                    onChange={e => setManualForm({...manualForm, streamUrl: e.target.value})}
+                                    className="w-full bg-black border border-stone-800 text-white px-4 py-3 rounded-xl focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 transition-all placeholder:text-stone-700 font-mono text-sm"
+                                    placeholder="https://server.com/live/stream.m3u8"
+                                 />
+                             </div>
+
+                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                 <div className="space-y-2">
+                                     <label className="text-xs font-bold text-stone-500 uppercase tracking-wider flex items-center">
+                                         <ImageIcon className="w-3 h-3 mr-1" /> Logo URL
+                                     </label>
+                                     <input 
+                                        type="text"
+                                        value={manualForm.logo}
+                                        onChange={e => setManualForm({...manualForm, logo: e.target.value})}
+                                        className="w-full bg-black border border-stone-800 text-white px-4 py-3 rounded-xl focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 transition-all placeholder:text-stone-700 font-mono text-sm"
+                                        placeholder="https://..."
+                                     />
+                                 </div>
+                                 <div className="space-y-2">
+                                     <label className="text-xs font-bold text-stone-500 uppercase tracking-wider flex items-center">
+                                         <Server className="w-3 h-3 mr-1" /> Provider
+                                     </label>
+                                     <input 
+                                        type="text"
+                                        value={manualForm.provider}
+                                        onChange={e => setManualForm({...manualForm, provider: e.target.value})}
+                                        className="w-full bg-black border border-stone-800 text-white px-4 py-3 rounded-xl focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 transition-all placeholder:text-stone-700"
+                                        placeholder="Custom Provider"
+                                     />
+                                 </div>
+                             </div>
+
+                             <div className="space-y-2">
+                                 <label className="text-xs font-bold text-stone-500 uppercase tracking-wider flex items-center">
+                                     <Info className="w-3 h-3 mr-1" /> Description
+                                 </label>
+                                 <textarea 
+                                    value={manualForm.description}
+                                    onChange={e => setManualForm({...manualForm, description: e.target.value})}
+                                    className="w-full bg-black border border-stone-800 text-white px-4 py-3 rounded-xl focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 transition-all placeholder:text-stone-700 min-h-[100px]"
+                                    placeholder="Brief description of the channel..."
+                                 />
+                             </div>
+
+                             <div className="pt-4">
+                                 <button 
+                                    type="submit"
+                                    className="w-full py-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white font-black rounded-xl shadow-lg hover:shadow-green-500/20 transition-all uppercase tracking-widest text-sm"
+                                 >
+                                     Deploy Channel
+                                 </button>
+                             </div>
+                         </form>
+
+                         {/* Preview */}
+                         <div className="w-full lg:w-80 flex flex-col items-center">
+                             <div className="mb-4 text-xs font-bold text-stone-500 uppercase tracking-widest">Live Preview</div>
+                             
+                             {/* Mock Card */}
+                             <div className="w-full aspect-[16/9] bg-stone-900 border border-stone-800 rounded-xl overflow-hidden relative group shadow-2xl">
+                                 <div className="absolute inset-0 flex items-center justify-center p-6 bg-gradient-to-br from-stone-800 to-stone-900">
+                                    {manualForm.logo ? (
+                                        <img src={manualForm.logo} alt="Preview" className="w-full h-full object-contain drop-shadow-lg" />
+                                    ) : (
+                                        <span className="text-4xl font-black text-stone-700">{manualForm.name.slice(0,2).toUpperCase() || 'TV'}</span>
+                                    )}
+                                 </div>
+                                 <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-60" />
+                                 <div className="absolute bottom-0 left-0 right-0 p-3">
+                                    <p className="text-[10px] font-bold text-green-500 uppercase tracking-widest mb-0.5">{manualForm.category || 'CATEGORY'}</p>
+                                    <h4 className="text-white font-bold leading-tight line-clamp-1">{manualForm.name || 'Channel Name'}</h4>
+                                </div>
+                             </div>
+
+                             <div className="mt-8 p-4 bg-stone-900/50 rounded-xl border border-stone-800 w-full">
+                                 <h4 className="text-xs font-bold text-white mb-2">Configuration Summary</h4>
+                                 <div className="space-y-1 text-[10px] text-stone-400 font-mono">
+                                     <div className="flex justify-between">
+                                         <span>ID:</span>
+                                         <span>AUTO_GEN</span>
+                                     </div>
+                                     <div className="flex justify-between">
+                                         <span>PROTOCOL:</span>
+                                         <span className="text-green-500">HLS/HTTPS</span>
+                                     </div>
+                                     <div className="flex justify-between">
+                                         <span>PROVIDER:</span>
+                                         <span>{manualForm.provider}</span>
+                                     </div>
+                                 </div>
+                             </div>
+                         </div>
+                     </div>
                  </div>
             </div>
         )}
