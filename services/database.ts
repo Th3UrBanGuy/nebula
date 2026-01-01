@@ -231,7 +231,7 @@ export const registerUserInDB = async (user: User, password: string): Promise<{ 
                 user.avatar, 
                 user.coverImage, 
                 user.bio, 
-                JSON.stringify(user.preferences), 
+                JSON.stringify(user.preferences || { notifications: true, autoplay: true }), 
                 JSON.stringify(user.license || null)
             ]
         );
@@ -260,7 +260,7 @@ export const loginUserFromDB = async (email: string, password: string): Promise<
                 coverImage: row.cover_image,
                 bio: row.bio,
                 preferences: row.preferences || { notifications: true, autoplay: true },
-                license: row.license_data
+                license: row.license_data || undefined
             };
         }
         return null;
@@ -284,7 +284,7 @@ export const getUserById = async (id: string): Promise<User | null> => {
                 coverImage: row.cover_image,
                 bio: row.bio,
                 preferences: row.preferences || { notifications: true, autoplay: true },
-                license: row.license_data
+                license: row.license_data || undefined
             };
         }
         return null;

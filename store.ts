@@ -109,14 +109,11 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   // Auth Actions
+  // NOTE: We do not set global isLoading here to avoid unmounting the Auth component during submission
   login: async (email, pass) => {
-    set({ isLoading: true });
-    
     // Attempt Login
     const user = await loginUserFromDB(email, pass);
     
-    set({ isLoading: false });
-
     if (user) {
         // Persist Session
         localStorage.setItem('nebula_session', user.id);
@@ -128,8 +125,6 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   register: async (email, pass, role) => {
-      set({ isLoading: true });
-
       const isAdmin = role === 'admin';
       const randomAvatar = CHARACTER_AVATARS[Math.floor(Math.random() * CHARACTER_AVATARS.length)];
       const randomCover = COVER_SCENES[Math.floor(Math.random() * COVER_SCENES.length)];
@@ -148,8 +143,6 @@ export const useStore = create<AppState>((set, get) => ({
 
       const result = await registerUserInDB(newUser, pass);
       
-      set({ isLoading: false });
-
       if (result.success) {
           // Auto login on register
           localStorage.setItem('nebula_session', newUser.id);
