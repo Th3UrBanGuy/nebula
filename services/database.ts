@@ -24,7 +24,13 @@ export const initializeSchema = async (): Promise<{ success: boolean; error?: st
     }
 
     try {
-        console.log("DB: Attempting connection to:", CONFIG.DATABASE_URL.replace(/:[^:@]+@/, ':***@'));
+        // Log masked URL for debugging connection issues
+        const maskedUrl = CONFIG.DATABASE_URL.replace(/:[^:@]+@/, ':***@');
+        console.log(`DB: Initializing connection... URL: ${maskedUrl}`);
+        
+        if (CONFIG.DATABASE_URL.includes("channel_binding")) {
+            console.warn("DB WARNING: 'channel_binding' detected in URL. This may cause fetch errors in browsers.");
+        }
         
         // 1. Test basic connectivity first
         await sql`SELECT 1`;
@@ -67,7 +73,11 @@ export const initializeSchema = async (): Promise<{ success: boolean; error?: st
         return { success: true };
     } catch (err: any) {
         console.error("DB Init Error:", err);
-        return { success: false, error: err.message || "Unknown Database Error" };
+        let msg = err.message || "Unknown Database Error";
+        if (msg.includes("Invalid name")) {
+            msg += " (Likely caused by malformed URL or 'channel_binding' param)";
+        }
+        return { success: false, error: msg };
     }
 };
 
