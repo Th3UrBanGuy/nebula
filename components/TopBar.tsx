@@ -1,16 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { Wifi, Signal, Bell, Search, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { Wifi, Signal, Cloud, ShieldCheck, MapPin } from 'lucide-react';
 import { format } from 'date-fns';
 import { useStore } from '../store';
 import { CONFIG } from '../config';
 
 export const TopBar: React.FC = () => {
   const [time, setTime] = useState(new Date());
-  const { activeChannelId, channels } = useStore();
+  const { activeChannelId, channels, user, setView } = useStore();
   
   const isSecureMode = !!CONFIG.DATABASE_URL;
-
-  const currentChannel = channels.find(c => c.id === activeChannelId);
 
   useEffect(() => {
     const interval = setInterval(() => setTime(new Date()), 60000);
@@ -18,57 +16,63 @@ export const TopBar: React.FC = () => {
   }, []);
 
   return (
-    <div className="w-full h-16 md:h-20 flex items-center justify-between px-4 md:px-8 z-20 pointer-events-none">
-      <div className="flex items-center space-x-3 md:space-x-6 pointer-events-auto">
-         {/* Live Status Badge */}
-         <div className="flex items-center space-x-2 px-3 py-1.5 md:px-4 md:py-2 rounded-full bg-stone-900/80 border border-stone-800 backdrop-blur-md">
-            <div className={`w-1.5 h-1.5 md:w-2 md:h-2 rounded-full ${isSecureMode ? 'bg-green-500 animate-pulse' : 'bg-orange-500'}`} />
-            <span className="text-[10px] md:text-xs font-bold text-stone-400 tracking-wider">
-                {isSecureMode ? 'ONLINE' : 'DEMO MODE'}
-            </span>
-         </div>
-
-         {/* Security Badge (Only visible if secure) */}
-         {isSecureMode && (
-             <div className="hidden md:flex items-center space-x-1 text-emerald-500/80" title="Secure Encrypted Connection">
-                 <ShieldCheck className="w-4 h-4" />
+    <div className="w-full h-20 flex items-start justify-between px-6 md:px-10 py-6 z-20 pointer-events-none">
+      
+      {/* Left: Branding & Status */}
+      <div className="flex flex-col pointer-events-auto">
+         <div className="flex items-center space-x-2 mb-1">
+             <div className="w-8 h-8 bg-gradient-to-br from-stone-800 to-stone-900 rounded-lg flex items-center justify-center border border-stone-700/50 shadow-lg">
+                <span className="font-black text-lg text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-red-500">N</span>
              </div>
-         )}
-
-         {/* Active Provider Display - Hidden on Mobile */}
-         {currentChannel && (
-            <div className="hidden lg:flex flex-col">
-                <span className="text-[10px] uppercase text-stone-500 font-bold tracking-widest">Current Provider</span>
-                <span className="text-sm font-bold text-orange-500">{currentChannel.provider}</span>
-            </div>
-         )}
+             <span className="text-sm font-bold text-stone-300 tracking-widest uppercase">Nebula OS</span>
+         </div>
+         
+         <div className="flex items-center space-x-3 text-[10px] font-mono text-stone-500 ml-1">
+            <span className="flex items-center"><Signal className="w-3 h-3 mr-1" /> 5G</span>
+            <span>•</span>
+            <span className="flex items-center"><Wifi className="w-3 h-3 mr-1" /> Connected</span>
+         </div>
       </div>
 
-      <div className="flex items-center space-x-3 md:space-x-6 pointer-events-auto">
-        <div className="relative hidden md:block">
-             <Search className="w-5 h-5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
-             <input 
-                type="text" 
-                placeholder="Search channels..." 
-                className="bg-stone-900/50 border border-stone-800 rounded-full pl-10 pr-4 py-2 text-sm text-stone-200 focus:outline-none focus:border-orange-500/50 w-48 transition-all hover:w-64 focus:w-64 placeholder:text-stone-600"
-             />
-        </div>
-
-        <div className="h-8 w-px bg-stone-800 mx-2 hidden md:block" />
-
-        <div className="flex items-center space-x-3 md:space-x-5 text-stone-400">
-           <Search className="w-5 h-5 md:hidden" />
-           <Bell className="w-5 h-5 hover:text-orange-400 cursor-pointer transition-colors" />
-           <div className="hidden md:flex items-center space-x-1">
-             <Signal className="w-4 h-4" />
-             <Wifi className="w-5 h-5" />
-           </div>
-           <span className="text-sm md:text-lg font-bold text-stone-200">{format(time, 'h:mm')}</span>
-        </div>
+      {/* Right: Time & Widget */}
+      <div className="flex items-center space-x-4 pointer-events-auto">
         
-        <div className="w-8 h-8 md:w-11 md:h-11 rounded-full bg-gradient-to-tr from-stone-700 to-stone-600 p-0.5 shadow-lg cursor-pointer hover:ring-2 hover:ring-orange-500 transition-all">
-            <img src="https://i.pravatar.cc/150?u=a042581f4e29026704d" alt="User" className="w-full h-full rounded-full object-cover border-2 border-stone-900" />
+        {/* Weather Widget (Mock) */}
+        <div className="hidden md:flex items-center bg-stone-950/30 backdrop-blur-md border border-stone-800/50 rounded-full px-4 py-2 space-x-3 shadow-lg">
+            <div className="flex items-center space-x-1 text-stone-300">
+                <Cloud className="w-4 h-4 text-blue-400" />
+                <span className="text-xs font-bold">24°C</span>
+            </div>
+            <div className="w-px h-3 bg-stone-700" />
+            <div className="flex items-center space-x-1 text-stone-400">
+                <MapPin className="w-3 h-3" />
+                <span className="text-[10px] font-bold uppercase tracking-wider">Tokyo, JP</span>
+            </div>
         </div>
+
+        {/* Time Display */}
+        <div className="text-right">
+           <h2 className="text-3xl font-black text-white leading-none tracking-tight drop-shadow-md">
+               {format(time, 'HH:mm')}
+           </h2>
+           <p className="text-xs font-bold text-orange-500 uppercase tracking-widest text-right">
+               {format(time, 'EEE, MMM d')}
+           </p>
+        </div>
+
+        <button 
+          onClick={() => setView('profile')}
+          className="ml-2 w-10 h-10 rounded-full bg-gradient-to-tr from-stone-700 to-stone-600 p-0.5 shadow-lg cursor-pointer hover:ring-2 hover:ring-orange-500 transition-all group relative"
+        >
+            <img 
+              src={user?.avatar || "https://i.pravatar.cc/150?u=def"} 
+              alt="User" 
+              className="w-full h-full rounded-full object-cover border-2 border-stone-900 group-hover:brightness-110" 
+            />
+            {user?.role === 'admin' && (
+                <div className="absolute -top-1 -right-1 bg-red-600 text-[8px] font-black px-1.5 py-0.5 rounded text-white border border-black">ADM</div>
+            )}
+        </button>
       </div>
     </div>
   );

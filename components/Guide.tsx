@@ -1,84 +1,156 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { useStore } from '../store';
-import { format } from 'date-fns';
-import { Play } from 'lucide-react';
+import { Play, SortAsc, Layers } from 'lucide-react';
+import { Channel } from '../types';
 
 export const Guide: React.FC = () => {
-  const { channels, programs, activeChannelId, setChannel, setView } = useStore();
+  const { channels, setChannel, setView } = useStore();
+  const [filterMode, setFilterMode] = useState<'all' | 'az'>('all');
+  const [activeCategory, setActiveCategory] = useState<string>('All');
 
-  const getChannelPrograms = (channelId: string) => programs.filter(p => p.channelId === channelId);
+  // Extract unique categories
+  const categories = useMemo<string[]>(() => {
+    const cats = new Set<string>(channels.map((c: Channel) => c.category));
+    return ['All', ...Array.from(cats)];
+  }, [channels]);
+
+  // Filter and Sort Channels
+  const displayedChannels = useMemo(() => {
+    let filtered = activeCategory === 'All' 
+        ? channels 
+        : channels.filter(c => c.category === activeCategory);
+    
+    if (filterMode === 'az') {
+        filtered = [...filtered].sort((a, b) => a.name.localeCompare(b.name));
+    }
+    return filtered;
+  }, [channels, activeCategory, filterMode]);
+
+  // Grouping for 'All' view (if not sorting A-Z)
+  const groupedChannels = useMemo(() => {
+      if (activeCategory !== 'All' || filterMode === 'az') return null;
+      
+      const groups: Record<string, Channel[]> = {};
+      channels.forEach(ch => {
+          if (!groups[ch.category]) groups[ch.category] = [];
+          groups[ch.category].push(ch);
+      });
+      return groups;
+  }, [channels, activeCategory, filterMode]);
 
   return (
-    <div className="w-full h-full flex flex-col overflow-hidden bg-stone-900/40 rounded-[2rem] border border-stone-800 backdrop-blur-md shadow-2xl">
-      <div className="p-8 border-b border-stone-800 bg-stone-950/80 flex justify-between items-center">
-        <div>
-            <h2 className="text-3xl font-black text-white">Live Guide</h2>
-            <p className="text-stone-500 text-sm font-medium mt-1">Today's Schedule across all providers</p>
-        </div>
-        <div className="flex space-x-2">
-            <div className="w-3 h-3 rounded-full bg-red-500" />
-            <div className="w-3 h-3 rounded-full bg-orange-500" />
-            <div className="w-3 h-3 rounded-full bg-yellow-500" />
-        </div>
-      </div>
+    <div className="w-full h-full flex overflow-hidden bg-stone-900/40 rounded-[2rem] border border-stone-800 backdrop-blur-md shadow-2xl">
       
-      <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 custom-scrollbar">
-         {channels.map(channel => (
-           <div key={channel.id} className="flex mb-2 group hover:bg-stone-800/30 rounded-2xl transition-colors p-3 border border-transparent hover:border-stone-800">
-             {/* Channel Info */}
-             <div className="w-56 flex-shrink-0 flex items-center space-x-4 p-2 border-r border-stone-800/50 mr-4">
-                <div className={`w-14 h-14 rounded-xl flex items-center justify-center text-white font-black text-xl shadow-lg transform transition-transform group-hover:scale-105 ${channel.color}`}>
-                   {channel.logo}
-                </div>
-                <div>
-                   <h3 className="font-bold text-stone-200 text-lg leading-none mb-1">{channel.name}</h3>
-                   <span className="text-[10px] text-orange-500 font-bold uppercase tracking-widest bg-orange-500/10 px-2 py-0.5 rounded">{channel.provider}</span>
-                </div>
-             </div>
+      {/* Sidebar Categories */}
+      <div className="w-48 md:w-64 bg-stone-950/80 border-r border-stone-800 p-6 flex flex-col overflow-y-auto custom-scrollbar">
+          <h2 className="text-xl font-black text-white mb-6 flex items-center">
+              <Layers className="w-5 h-5 mr-2 text-orange-500" />
+              Library
+          </h2>
+          <div className="space-y-2">
+              {categories.map((cat) => (
+                  <button
+                    key={cat}
+                    onClick={() => setActiveCategory(cat)}
+                    className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex justify-between items-center
+                        ${activeCategory === cat 
+                            ? 'bg-gradient-to-r from-stone-800 to-stone-900 text-white border border-stone-700 shadow-lg' 
+                            : 'text-stone-500 hover:text-stone-300 hover:bg-stone-900/50'
+                        }
+                    `}
+                  >
+                      <span>{cat}</span>
+                      {cat !== 'All' && <span className="text-[10px] bg-stone-800 text-stone-400 px-1.5 rounded">{channels.filter(c => c.category === cat).length}</span>}
+                  </button>
+              ))}
+          </div>
+      </div>
 
-             {/* Programs Timeline */}
-             <div className="flex-1 flex space-x-3 overflow-x-auto no-scrollbar items-center py-2">
-                {getChannelPrograms(channel.id).map((program, idx) => {
-                    const isActive = channel.id === activeChannelId && idx === 0;
-                    return (
-                        <div 
-                           key={program.id}
-                           onClick={() => { setChannel(channel.id); setView('player'); }}
-                           className={`relative flex-shrink-0 h-28 rounded-xl overflow-hidden cursor-pointer transition-all border
-                             ${isActive 
-                                ? 'border-orange-500 w-96 shadow-[0_0_15px_rgba(234,88,12,0.3)]' 
-                                : 'w-72 border-stone-800 hover:border-stone-600 bg-stone-900/50'
-                             }
-                           `}
-                        >
-                           <img src={program.thumbnail} className="absolute inset-0 w-full h-full object-cover opacity-30 group-hover:opacity-40 transition-opacity" alt="" />
-                           
-                           <div className="absolute inset-0 bg-gradient-to-r from-stone-950 via-stone-950/80 to-transparent p-5 flex flex-col justify-center">
-                              <div className="flex items-center justify-between mb-2">
-                                <span className={`text-xs font-mono font-bold ${isActive ? 'text-orange-400' : 'text-stone-500'}`}>
-                                    {format(program.startTime, 'h:mm')} - {format(program.endTime, 'h:mm')}
-                                </span>
-                                {isActive && (
-                                    <span className="flex h-2 w-2 relative">
-                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                                        <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-                                    </span>
-                                )}
-                              </div>
-                              <h4 className="font-bold text-white text-lg leading-tight line-clamp-2">{program.title}</h4>
-                           </div>
-                           
-                           {/* Hover Play Button */}
-                           <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 bg-stone-950/60 backdrop-blur-sm transition-opacity">
-                              <Play className="w-10 h-10 text-white fill-white drop-shadow-lg" />
-                           </div>
-                        </div>
-                    );
-                })}
-             </div>
-           </div>
-         ))}
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col bg-stone-950/30">
+          
+          {/* Toolbar */}
+          <div className="h-20 border-b border-stone-800 flex items-center justify-between px-8 bg-stone-900/50 backdrop-blur-md">
+              <h1 className="text-2xl font-bold text-white tracking-tight">
+                  {activeCategory === 'All' ? 'All Channels' : activeCategory}
+              </h1>
+              
+              <div className="flex items-center space-x-2 bg-stone-950 rounded-lg p-1 border border-stone-800">
+                   <button 
+                      onClick={() => setFilterMode('all')}
+                      className={`px-3 py-1.5 rounded text-xs font-bold transition-all ${filterMode === 'all' ? 'bg-stone-800 text-white' : 'text-stone-500 hover:text-stone-300'}`}
+                   >
+                       Default
+                   </button>
+                   <button 
+                      onClick={() => setFilterMode('az')}
+                      className={`px-3 py-1.5 rounded text-xs font-bold transition-all flex items-center ${filterMode === 'az' ? 'bg-stone-800 text-white' : 'text-stone-500 hover:text-stone-300'}`}
+                   >
+                       <SortAsc className="w-3 h-3 mr-1" /> A-Z
+                   </button>
+              </div>
+          </div>
+
+          {/* Grid Area */}
+          <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+              
+              {/* If Grouped View (Default All) */}
+              {groupedChannels ? (
+                  Object.entries(groupedChannels).map(([group, groupChannels]) => (
+                      <div key={group} className="mb-10 animate-fade-in-up">
+                          <h3 className="text-lg font-bold text-stone-400 mb-4 flex items-center">
+                              <span className="w-1.5 h-1.5 rounded-full bg-orange-500 mr-2" />
+                              {group}
+                          </h3>
+                          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                              {groupChannels.map(channel => (
+                                  <ChannelCard key={channel.id} channel={channel} setChannel={setChannel} setView={setView} />
+                              ))}
+                          </div>
+                      </div>
+                  ))
+              ) : (
+                  // Flat Grid View (Filtered or Sorted)
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 animate-fade-in-up">
+                      {displayedChannels.map(channel => (
+                          <ChannelCard key={channel.id} channel={channel} setChannel={setChannel} setView={setView} />
+                      ))}
+                  </div>
+              )}
+          </div>
       </div>
     </div>
   );
 };
+
+const ChannelCard = ({ channel, setChannel, setView }: { channel: Channel, setChannel: any, setView: any }) => (
+    <div 
+        onClick={() => { setChannel(channel.id); setView('player'); }}
+        className="group relative aspect-[16/9] bg-stone-900 border border-stone-800 rounded-xl overflow-hidden cursor-pointer hover:border-orange-500/50 hover:shadow-[0_0_30px_rgba(0,0,0,0.5)] transition-all hover:scale-[1.02]"
+    >
+        {/* Background / Logo Area */}
+        <div className={`absolute inset-0 flex items-center justify-center p-6 bg-gradient-to-br from-stone-800 to-stone-900`}>
+             {channel.logo.startsWith('http') ? (
+                 <img src={channel.logo} alt={channel.name} className="w-full h-full object-contain drop-shadow-lg opacity-80 group-hover:opacity-100 transition-opacity" />
+             ) : (
+                 <span className="text-4xl font-black text-stone-700 group-hover:text-stone-500">{channel.logo}</span>
+             )}
+        </div>
+        
+        {/* Gradient Overlay */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-60 group-hover:opacity-80 transition-opacity" />
+
+        {/* Text Info */}
+        <div className="absolute bottom-0 left-0 right-0 p-3 transform translate-y-1 group-hover:translate-y-0 transition-transform">
+            <p className="text-[10px] font-bold text-orange-500 uppercase tracking-widest mb-0.5">{channel.category}</p>
+            <h4 className="text-white font-bold leading-tight line-clamp-1">{channel.name}</h4>
+        </div>
+
+        {/* Hover Play */}
+        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/20 backdrop-blur-[1px]">
+            <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-lg transform scale-50 group-hover:scale-100 transition-transform">
+                <Play className="w-4 h-4 text-black fill-current ml-0.5" />
+            </div>
+        </div>
+    </div>
+);

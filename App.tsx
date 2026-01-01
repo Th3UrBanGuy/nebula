@@ -1,16 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { useStore } from './store';
-import { Sidebar } from './components/Sidebar';
-import { BottomNav } from './components/BottomNav';
+import { BottomNav } from './components/BottomNav'; // Now acts as the Dock
 import { VideoPlayer } from './components/VideoPlayer';
 import { Dashboard } from './components/Dashboard';
 import { Guide } from './components/Guide';
 import { Assistant } from './components/Assistant';
 import { TopBar } from './components/TopBar';
+import { Auth } from './components/Auth';
+import { Profile } from './components/Profile';
+import { AdminPanel } from './components/AdminPanel';
 import { Loader2, Flame } from 'lucide-react';
 
 const App: React.FC = () => {
-  const { view, initialize, isLoading } = useStore();
+  const { view, initialize, isLoading, user } = useStore();
   const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
@@ -19,6 +21,7 @@ const App: React.FC = () => {
     return () => clearTimeout(timer);
   }, [initialize]);
 
+  // Loading / Splash Screen
   if (showSplash || isLoading) {
     return (
       <div className="h-screen w-screen bg-stone-950 flex flex-col items-center justify-center relative overflow-hidden">
@@ -34,44 +37,74 @@ const App: React.FC = () => {
         </div>
         <div className="absolute bottom-10 flex flex-col items-center">
           <Loader2 className="w-6 h-6 text-orange-500 animate-spin mb-2" />
-          <span className="text-xs text-stone-600 font-mono">CONNECTING TO NEON DB</span>
+          <span className="text-xs text-stone-600 font-mono">ESTABLISHING CONNECTION</span>
         </div>
       </div>
     );
   }
 
-  return (
-    <div className="h-screen w-screen bg-stone-950 text-stone-100 flex flex-col md:flex-row overflow-hidden font-sans selection:bg-orange-500/30">
-      {/* Navigation: Sidebar for Desktop, BottomNav for Mobile */}
-      <Sidebar />
+  // Auth Guard
+  if (!user) {
+    return <Auth />;
+  }
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col relative z-0 h-full">
+  // Determine if Mini Player should be hidden
+  // Hidden in: Profile, Search (AI), Admin
+  const isPlayerHidden = view === 'profile' || view === 'ai' || view === 'admin';
+
+  return (
+    <div className="h-screen w-screen bg-stone-950 text-stone-100 flex flex-col overflow-hidden font-sans selection:bg-orange-500/30 relative">
+      
+      {/* IMMERSIVE BACKGROUND LAYER */}
+      <div className="absolute inset-0 z-0">
+          {/* High-res abstract architecture background to mimic the living room/TV feel */}
+          <img 
+            src="https://images.unsplash.com/photo-1600607686527-6fb886090705?q=80&w=2700&auto=format&fit=crop" 
+            alt="Background" 
+            className="w-full h-full object-cover opacity-40 blur-sm scale-105"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-stone-950 via-stone-950/60 to-stone-950/40" />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-orange-500/10 via-transparent to-transparent" />
+      </div>
+
+      {/* Main Content Area - Full Width */}
+      <div className="flex-1 flex flex-col relative z-10 h-full">
         <TopBar />
         
-        {/* Added padding-bottom for mobile to account for BottomNav */}
-        <main className="flex-1 overflow-hidden relative p-4 md:p-6 pb-24 md:pb-6">
-          {/* Background Ambient Glow - Warm */}
-          <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-orange-900/10 via-stone-950 to-stone-950 -z-10 pointer-events-none" />
-
-          {/* Views */}
-          <div className={`h-full w-full transition-all duration-500 ${view === 'home' ? 'opacity-100 translate-y-0 z-10' : 'opacity-0 translate-y-4 hidden'}`}>
-            <Dashboard />
-          </div>
+        <main className="flex-1 overflow-hidden relative p-4 md:p-8 pb-32">
           
-          <div className={`h-full w-full transition-all duration-500 ${view === 'guide' ? 'opacity-100 translate-y-0 z-10' : 'opacity-0 translate-y-4 hidden'}`}>
-            <Guide />
+          {/* Views Layering - Centered Container for TV Feel */}
+          <div className="w-full h-full max-w-[1600px] mx-auto relative">
+              <div className={`h-full w-full transition-all duration-700 ease-[cubic-bezier(0.25,1,0.5,1)] ${view === 'home' ? 'opacity-100 scale-100 blur-0' : 'opacity-0 scale-95 blur-xl pointer-events-none absolute inset-0'}`}>
+                <Dashboard />
+              </div>
+              
+              <div className={`h-full w-full transition-all duration-500 ${view === 'guide' ? 'opacity-100 translate-y-0 z-10' : 'opacity-0 translate-y-10 absolute inset-0 pointer-events-none'}`}>
+                <Guide />
+              </div>
+
+              <div className={`h-full w-full transition-all duration-500 ${view === 'ai' ? 'opacity-100 translate-y-0 z-10' : 'opacity-0 translate-y-10 absolute inset-0 pointer-events-none'}`}>
+                <Assistant />
+              </div>
+              
+              <div className={`h-full w-full transition-all duration-500 ${view === 'profile' ? 'opacity-100 translate-y-0 z-10' : 'opacity-0 translate-y-10 absolute inset-0 pointer-events-none'}`}>
+                <Profile />
+              </div>
+              
+              <div className={`h-full w-full transition-all duration-500 ${view === 'admin' ? 'opacity-100 translate-y-0 z-10' : 'opacity-0 translate-y-10 absolute inset-0 pointer-events-none'}`}>
+                <AdminPanel />
+              </div>
           </div>
 
-          <div className={`h-full w-full transition-all duration-500 ${view === 'ai' ? 'opacity-100 translate-y-0 z-10' : 'opacity-0 translate-y-4 hidden'}`}>
-             <Assistant />
-          </div>
-
-          {/* Picture in Picture / Fullscreen Player Logic */}
-          <div className={`fixed transition-all duration-500 ease-in-out shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden
+          {/* Persistent Player (PIP) - Responsive Size & Auto-Hide */}
+          <div className={`fixed transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] shadow-[0_20px_60px_rgba(0,0,0,0.8)] overflow-hidden bg-black
             ${view === 'player' 
               ? 'inset-0 z-50 rounded-none' 
-              : 'bottom-24 right-4 md:bottom-8 md:right-8 w-64 h-36 md:w-96 md:h-56 rounded-xl md:rounded-2xl border border-stone-700/50 z-40 bg-black hover:scale-105 cursor-pointer group hover:shadow-[0_0_30px_rgba(234,88,12,0.2)]'
+              : `
+                 z-40 rounded-xl border border-stone-700/50 cursor-pointer group hover:scale-105 hover:shadow-[0_0_40px_rgba(234,88,12,0.3)] hover:border-orange-500/50
+                 bottom-24 right-4 w-36 h-20 md:bottom-32 md:right-8 md:w-80 md:h-44
+                 ${isPlayerHidden ? 'opacity-0 pointer-events-none translate-y-10 scale-90' : 'opacity-100'}
+                `
             }
           `}>
              <VideoPlayer isMini={view !== 'player'} />
@@ -80,6 +113,7 @@ const App: React.FC = () => {
         </main>
       </div>
       
+      {/* Floating Dock Navigation */}
       <BottomNav />
     </div>
   );
