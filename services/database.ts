@@ -2,15 +2,22 @@ import { neon } from '@neondatabase/serverless';
 import { Channel } from '../types';
 import { CONFIG } from '../config';
 
-// Initialize the Neon SQL client using the URL from our config
-// This allows switching between Local Dev (local_secrets.ts) and Prod (Env Vars) automatically.
-export const sql = neon(CONFIG.DATABASE_URL);
+// We do not initialize 'sql' at the top level to prevent errors if the URL is missing.
 
 export const fetchChannelsFromDB = async (): Promise<Channel[] | null> => {
+  // Security Check: If no DB URL is configured, fallback immediately to mocks.
+  if (!CONFIG.DATABASE_URL) {
+    console.warn("System Notification: No VITE_DATABASE_URL found. Running in Offline/Mock Mode.");
+    return null;
+  }
+
   try {
-    console.log("Attempting to connect to Neon DB...");
-    // Assuming a table 'channels' exists. If not, this will throw, and we catch it to fallback to mocks.
-    // We map the DB result to our Channel interface type
+    console.log("System: Connecting to Nebula Stream Network (Neon DB)...");
+    
+    // Initialize client only when needed
+    const sql = neon(CONFIG.DATABASE_URL);
+    
+    // Fetch channels
     const result = await sql`SELECT * FROM channels`;
     
     if (result && result.length > 0) {
@@ -27,7 +34,7 @@ export const fetchChannelsFromDB = async (): Promise<Channel[] | null> => {
     }
     return null;
   } catch (err) {
-    console.warn("DB Connection/Query failed. This is expected if the table doesn't exist or if accessing directly from browser without CORS proxy. Falling back to internal mock data.", err);
+    console.warn("Connection Error: Unable to reach stream provider. Falling back to cached data.", err);
     return null;
   }
 };

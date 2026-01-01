@@ -1,11 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { Wifi, Signal, Bell, Search } from 'lucide-react';
+import { Wifi, Signal, Bell, Search, ShieldCheck, ShieldAlert } from 'lucide-react';
 import { format } from 'date-fns';
 import { useStore } from '../store';
+import { CONFIG } from '../config';
 
 export const TopBar: React.FC = () => {
   const [time, setTime] = useState(new Date());
   const { activeChannelId, channels } = useStore();
+  
+  const isSecureMode = !!CONFIG.DATABASE_URL;
 
   const currentChannel = channels.find(c => c.id === activeChannelId);
 
@@ -19,9 +22,18 @@ export const TopBar: React.FC = () => {
       <div className="flex items-center space-x-3 md:space-x-6 pointer-events-auto">
          {/* Live Status Badge */}
          <div className="flex items-center space-x-2 px-3 py-1.5 md:px-4 md:py-2 rounded-full bg-stone-900/80 border border-stone-800 backdrop-blur-md">
-            <div className="w-1.5 h-1.5 md:w-2 md:h-2 rounded-full bg-green-500 animate-pulse" />
-            <span className="text-[10px] md:text-xs font-bold text-stone-400 tracking-wider">ONLINE</span>
+            <div className={`w-1.5 h-1.5 md:w-2 md:h-2 rounded-full ${isSecureMode ? 'bg-green-500 animate-pulse' : 'bg-orange-500'}`} />
+            <span className="text-[10px] md:text-xs font-bold text-stone-400 tracking-wider">
+                {isSecureMode ? 'ONLINE' : 'DEMO MODE'}
+            </span>
          </div>
+
+         {/* Security Badge (Only visible if secure) */}
+         {isSecureMode && (
+             <div className="hidden md:flex items-center space-x-1 text-emerald-500/80" title="Secure Encrypted Connection">
+                 <ShieldCheck className="w-4 h-4" />
+             </div>
+         )}
 
          {/* Active Provider Display - Hidden on Mobile */}
          {currentChannel && (

@@ -5,7 +5,15 @@ export default defineConfig({
   plugins: [react()],
   build: {
     outDir: 'dist',
-    sourcemap: true,
+    sourcemap: false, // Disabled for production security (hides source code structure)
+    rollupOptions: {
+        output: {
+            manualChunks: {
+                vendor: ['react', 'react-dom', 'zustand', 'date-fns', 'lucide-react'],
+                db: ['@neondatabase/serverless']
+            }
+        }
+    }
   },
   server: {
     port: 3000,

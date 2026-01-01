@@ -1,20 +1,26 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Nebula Live OS
 
-# Run and deploy your AI Studio app
+## Security & Database Setup
 
-This contains everything you need to run your app locally.
+This project uses **Neon (PostgreSQL)** for the live database.
 
-View your app in AI Studio: https://ai.studio/apps/drive/1rEGoIyT-cchy1ldehQ9RLgqAvyxzA_RS
+### 1. Local Development (Secure)
+To keep your database credentials secure, **DO NOT** hardcode them in the files.
+1. Create a file named `.env` in the root directory.
+2. Add your connection string:
+   ```
+   VITE_DATABASE_URL=postgresql://neondb_owner:npg_ZMlPjxOk63VF@ep-cool-water-adt0eidc-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+   ```
+3. The `.env` file is ignored by Git, ensuring your secrets are safe.
 
-## Run Locally
+### 2. Deployment (Vercel/Netlify)
+1. Go to your project settings in the deployment dashboard.
+2. Navigate to **Environment Variables**.
+3. Add a new variable:
+   - Key: `VITE_DATABASE_URL`
+   - Value: `[Your Postgres Connection String]`
 
-**Prerequisites:**  Node.js
-
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## Architecture
+- **Frontend**: React 19, Vite, Tailwind CSS
+- **State**: Zustand
+- **Database**: Neon Serverless (Direct secure connection)
