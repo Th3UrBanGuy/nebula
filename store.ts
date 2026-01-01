@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { AppState, MOCK_CHANNELS, generateMockPrograms, ViewState, User, CHARACTER_AVATARS, COVER_SCENES } from './types';
-import { fetchChannelsFromDB } from './services/database';
+import { fetchChannelsFromDB, addChannelsToDB, deleteChannelFromDB, loginUserFromDB, registerUserInDB, getUserById, updateUserInDB, initializeSchema } from './services/database';
 
 export const useStore = create<AppState>((set, get) => ({
   user: null, // Start unauthenticated
@@ -11,6 +11,7 @@ export const useStore = create<AppState>((set, get) => ({
   channels: [],
   programs: [],
   isLoading: true,
+  isDbConfigured: false,
 
   setView: (view: ViewState) => set({ view }),
   
@@ -20,87 +21,120 @@ export const useStore = create<AppState>((set, get) => ({
 
   togglePlay: () => set((state) => ({ isPlaying: !state.isPlaying })),
 
-  removeChannel: (id: string) => {
+  removeChannel: async (id: string) => {
+    // Optimistic UI update
     set((state) => ({
       channels: state.channels.filter(c => c.id !== id)
     }));
+    // DB Update
+    await deleteChannelFromDB(id);
   },
 
-  importChannels: (newChannels) => {
+  importChannels: async (newChannels) => {
+    // 1. Update Local State
     set((state) => ({
-      channels: newChannels,
-      programs: generateMockPrograms(newChannels) // Regenerate programs for new channels
+      channels: [...state.channels, ...newChannels],
+      programs: generateMockPrograms([...state.channels, ...newChannels])
     }));
+    // 2. Persist to DB
+    await addChannelsToDB(newChannels);
   },
 
   // Auth Actions
   login: async (email, pass, role) => {
-    // Simulate API call delay
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    set({ isLoading: true });
     
-    // Role Logic: 
-    // 1. If role is explicitly provided (Registration), use it.
-    // 2. If not (Login), infer from email or default to 'viewer'.
-    let finalRole = role;
-    if (!finalRole) {
-         finalRole = email.toLowerCase().includes('admin') ? 'admin' : 'viewer';
+    // Attempt Login First
+    let user = await loginUserFromDB(email, pass);
+
+    // If no user found, and role is provided, treat as Registration
+    if (!user && role) {
+        const isAdmin = role === 'admin';
+        const randomAvatar = CHARACTER_AVATARS[Math.floor(Math.random() * CHARACTER_AVATARS.length)];
+        const randomCover = COVER_SCENES[Math.floor(Math.random() * COVER_SCENES.length)];
+        
+        const newUser: User = {
+            id: 'usr_' + Math.random().toString(36).substr(2, 9),
+            name: email.split('@')[0],
+            email: email,
+            role: role,
+            avatar: isAdmin ? 'https://ui-avatars.com/api/?name=Admin&background=ef4444&color=fff' : randomAvatar,
+            coverImage: randomCover,
+            bio: 'New explorer of the Nebula.',
+            preferences: { notifications: true, autoplay: true }
+        };
+
+        const success = await registerUserInDB(newUser, pass);
+        if (success) {
+            user = newUser;
+        }
     }
 
-    const isAdmin = finalRole === 'admin';
+    set({ isLoading: false });
 
-    // Pick random assets for new user
-    const randomAvatar = CHARACTER_AVATARS[Math.floor(Math.random() * CHARACTER_AVATARS.length)];
-    const randomCover = COVER_SCENES[Math.floor(Math.random() * COVER_SCENES.length)];
+    if (user) {
+        // Persist Session
+        localStorage.setItem('nebula_session', user.id);
+        set({ user });
+        return true;
+    }
 
-    const mockUser: User = {
-      id: isAdmin ? 'adm_' + Math.floor(Math.random() * 1000) : 'usr_' + Math.floor(Math.random() * 10000),
-      name: isAdmin ? 'System Commander' : 'Neo Anderson',
-      email: email,
-      avatar: isAdmin 
-        ? 'https://ui-avatars.com/api/?name=Admin&background=ef4444&color=fff' 
-        : randomAvatar,
-      coverImage: randomCover,
-      role: finalRole as 'admin' | 'viewer',
-      bio: isAdmin ? 'Authorized System Administrator. Level 5 Clearance.' : 'Digital nomad exploring the frequencies.',
-      preferences: {
-        notifications: true,
-        autoplay: true
-      }
-    };
-    
-    set({ user: mockUser });
-    return true;
+    return false;
   },
 
   logout: () => {
+    localStorage.removeItem('nebula_session');
     set({ user: null, view: 'home' });
   },
 
-  updateProfile: (updates) => {
-    set((state) => ({
-      user: state.user ? { ...state.user, ...updates } : null
-    }));
+  updateProfile: async (updates) => {
+    const currentUser = get().user;
+    if (!currentUser) return;
+
+    const updatedUser = { ...currentUser, ...updates };
+    set({ user: updatedUser });
+    
+    // DB Update
+    await updateUserInDB(updatedUser);
   },
 
   initialize: async () => {
-    // Attempt to fetch from real DB first
-    let channels = await fetchChannelsFromDB();
+    // 0. Initialize DB Schema (Create Tables if missing)
+    const dbReady = await initializeSchema();
+    set({ isDbConfigured: dbReady });
 
-    // Fallback to MOCK_CHANNELS if DB fails or is empty
-    if (!channels) {
-      console.log("Using Mock Data");
-      channels = MOCK_CHANNELS;
-    } else {
-      console.log("Using Live Database Data");
+    // 1. Restore Session
+    const sessionId = localStorage.getItem('nebula_session');
+    if (sessionId && dbReady) {
+        const user = await getUserById(sessionId);
+        if (user) {
+            set({ user });
+        } else {
+            localStorage.removeItem('nebula_session'); // Invalid session
+        }
     }
 
-    // Simulate network delay for boot effect
+    // 2. Fetch Content
+    let channels = null;
+    if (dbReady) {
+        channels = await fetchChannelsFromDB();
+    }
+
+    // Fallback to MOCK_CHANNELS if DB fails or is empty (for demo purposes if DB not set up)
+    if (!channels || channels.length === 0) {
+      console.log("System: DB empty or unreachable. Loading Emergency Protocol (Mock Data).");
+      channels = MOCK_CHANNELS;
+    } else {
+      console.log("System: Connected to Neural Network (Live DB).");
+    }
+
+    // Simulate boot delay for effect
     setTimeout(() => {
       set({
         channels: channels || [],
         programs: generateMockPrograms(channels || []),
         isLoading: false
       });
-    }, 1500);
+    }, 1000);
   }
 }));

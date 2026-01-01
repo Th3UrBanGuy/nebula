@@ -45,6 +45,7 @@ export interface AppState {
   channels: Channel[];
   programs: Program[];
   isLoading: boolean;
+  isDbConfigured: boolean;
   
   // Actions
   login: (email: string, pass: string, role?: 'admin' | 'viewer') => Promise<boolean>;
