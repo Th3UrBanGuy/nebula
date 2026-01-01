@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { useStore } from './store';
 import { BottomNav } from './components/BottomNav'; // Now acts as the Dock
@@ -9,6 +10,7 @@ import { TopBar } from './components/TopBar';
 import { Auth } from './components/Auth';
 import { Profile } from './components/Profile';
 import { AdminPanel } from './components/AdminPanel';
+import { SubscriptionWall } from './components/SubscriptionWall';
 import { Loader2, Flame } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -48,9 +50,19 @@ const App: React.FC = () => {
     return <Auth />;
   }
 
+  // License Guard: If not admin, and license is missing or expired
+  const hasValidLicense = user.role === 'admin' || (user.license && user.license.status === 'active' && user.license.expiryDate > Date.now());
+  
+  if (!hasValidLicense) {
+    return <SubscriptionWall />;
+  }
+
   // Determine if Mini Player should be hidden
   // Hidden in: Profile, Search (AI), Admin
   const isPlayerHidden = view === 'profile' || view === 'ai' || view === 'admin';
+  
+  // Distraction Free Mode: Hide Navs when in full player mode
+  const isDistractionFree = view === 'player';
 
   return (
     <div className="h-screen w-screen bg-stone-950 text-stone-100 flex flex-col overflow-hidden font-sans selection:bg-orange-500/30 relative">
@@ -69,9 +81,9 @@ const App: React.FC = () => {
 
       {/* Main Content Area - Full Width */}
       <div className="flex-1 flex flex-col relative z-10 h-full">
-        <TopBar />
+        {!isDistractionFree && <TopBar />}
         
-        <main className="flex-1 overflow-hidden relative p-4 md:p-8 pb-32">
+        <main className={`flex-1 overflow-hidden relative ${isDistractionFree ? 'p-0' : 'p-4 md:p-8 pb-32'}`}>
           
           {/* Views Layering - Centered Container for TV Feel */}
           <div className="w-full h-full max-w-[1600px] mx-auto relative">
@@ -114,7 +126,7 @@ const App: React.FC = () => {
       </div>
       
       {/* Floating Dock Navigation */}
-      <BottomNav />
+      {!isDistractionFree && <BottomNav />}
     </div>
   );
 };

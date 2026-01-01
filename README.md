@@ -18,7 +18,7 @@ To keep your database credentials secure, **DO NOT** hardcode them in the files.
 2. Navigate to **Environment Variables**.
 3. Add a new variable:
    - Key: `VITE_DATABASE_URL`
-   - Value: `[Your Postgres Connection String]`
+   - Value: `postgresql://neondb_owner:npg_ZMlPjxOk63VF@ep-cool-water-adt0eidc-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require`
 
 ## Architecture
 - **Frontend**: React 19, Vite, Tailwind CSS

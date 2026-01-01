@@ -1,7 +1,9 @@
+
 import React, { useState } from 'react';
 import { useStore } from '../store';
-import { User, Shield, Camera, Edit2, Save, X, Mail, Fingerprint, LogOut, Check, Image as ImageIcon } from 'lucide-react';
+import { User, Shield, Camera, Edit2, Save, X, Mail, Fingerprint, LogOut, Check, Image as ImageIcon, Key } from 'lucide-react';
 import { CHARACTER_AVATARS, COVER_SCENES } from '../types';
+import { format } from 'date-fns';
 
 export const Profile: React.FC = () => {
   const { user, updateProfile, logout } = useStore();
@@ -215,7 +217,35 @@ export const Profile: React.FC = () => {
 
                     {/* Right Column: Stats & Settings */}
                     <div className="space-y-6">
-                        <div className="p-6 bg-gradient-to-br from-stone-900 to-stone-950 rounded-2xl border border-stone-800">
+                        
+                        {/* License Card */}
+                        <div className="p-6 bg-gradient-to-br from-stone-900 to-stone-950 rounded-2xl border border-stone-800 relative overflow-hidden">
+                             <h3 className="text-xs font-bold text-stone-500 uppercase tracking-wider mb-4 flex items-center">
+                                <Key className="w-3 h-3 mr-1" /> Access License
+                             </h3>
+                             {user.license ? (
+                                 <div className="space-y-2 relative z-10">
+                                     <div className="text-xl font-bold text-white">{user.license.planName}</div>
+                                     <div className="flex items-center text-xs space-x-2">
+                                         <span className={`px-2 py-0.5 rounded font-bold uppercase ${user.license.status === 'active' ? 'bg-green-900/30 text-green-500' : 'bg-red-900/30 text-red-500'}`}>
+                                            {user.license.status}
+                                         </span>
+                                         <span className="text-stone-500">
+                                            Expires: {format(user.license.expiryDate, 'MMM d, yyyy')}
+                                         </span>
+                                     </div>
+                                 </div>
+                             ) : (
+                                 <div className="relative z-10">
+                                     <div className="text-stone-400 text-sm mb-2">No active license found.</div>
+                                     <button className="text-orange-500 text-xs font-bold hover:underline">Purchase Access</button>
+                                 </div>
+                             )}
+                             {/* bg decoration */}
+                             <div className="absolute -bottom-4 -right-4 w-24 h-24 bg-orange-500/10 rounded-full blur-xl" />
+                        </div>
+
+                        <div className="p-6 bg-stone-900/30 rounded-2xl border border-stone-800">
                              <h3 className="text-xs font-bold text-stone-500 uppercase tracking-wider mb-4">Viewing Stats</h3>
                              <div className="space-y-4">
                                  <div>
@@ -227,26 +257,8 @@ export const Profile: React.FC = () => {
                                          <div className="w-[65%] h-full bg-orange-600 rounded-full" />
                                      </div>
                                  </div>
-                                 <div>
-                                     <div className="flex justify-between text-sm mb-1">
-                                         <span className="text-stone-400">System Level</span>
-                                         <span className="text-white font-bold">Lvl 12</span>
-                                     </div>
-                                     <div className="w-full h-1 bg-stone-800 rounded-full overflow-hidden">
-                                         <div className="w-[45%] h-full bg-blue-500 rounded-full" />
-                                     </div>
-                                 </div>
                              </div>
                         </div>
-
-                        {isEditing && (
-                            <div className="p-6 bg-stone-900/30 rounded-2xl border border-stone-800">
-                                <h3 className="text-xs font-bold text-stone-500 uppercase tracking-wider mb-4">Password</h3>
-                                <button className="w-full py-2 bg-stone-800 hover:bg-stone-700 text-stone-300 rounded-lg text-sm font-bold transition-all border border-stone-700">
-                                    Request Reset
-                                </button>
-                            </div>
-                        )}
                     </div>
 
                 </div>

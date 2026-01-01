@@ -1,5 +1,6 @@
+
 import { create } from 'zustand';
-import { AppState, MOCK_CHANNELS, generateMockPrograms, ViewState, User, CHARACTER_AVATARS, COVER_SCENES } from './types';
+import { AppState, MOCK_CHANNELS, generateMockPrograms, ViewState, User, CHARACTER_AVATARS, COVER_SCENES, License } from './types';
 import { fetchChannelsFromDB, addChannelsToDB, deleteChannelFromDB, loginUserFromDB, registerUserInDB, getUserById, updateUserInDB, initializeSchema } from './services/database';
 
 // Updated MOCK_CHANNELS with REAL WORKING PUBLIC STREAMS for demonstration
@@ -92,21 +93,17 @@ export const useStore = create<AppState>((set, get) => ({
   togglePlay: () => set((state) => ({ isPlaying: !state.isPlaying })),
 
   removeChannel: async (id: string) => {
-    // Optimistic UI update
     set((state) => ({
       channels: state.channels.filter(c => c.id !== id)
     }));
-    // DB Update
     await deleteChannelFromDB(id);
   },
 
   importChannels: async (newChannels) => {
-    // 1. Update Local State
     set((state) => ({
       channels: [...state.channels, ...newChannels],
       programs: generateMockPrograms([...state.channels, ...newChannels])
     }));
-    // 2. Persist to DB
     await addChannelsToDB(newChannels);
   },
 
@@ -131,7 +128,8 @@ export const useStore = create<AppState>((set, get) => ({
             avatar: isAdmin ? 'https://ui-avatars.com/api/?name=Admin&background=ef4444&color=fff' : randomAvatar,
             coverImage: randomCover,
             bio: 'New explorer of the Nebula.',
-            preferences: { notifications: true, autoplay: true }
+            preferences: { notifications: true, autoplay: true },
+            license: isAdmin ? { status: 'active', key: 'ADMIN-OVERRIDE', expiryDate: 9999999999999, planName: 'System Administrator' } : undefined
         };
 
         const success = await registerUserInDB(newUser, pass);
@@ -164,12 +162,40 @@ export const useStore = create<AppState>((set, get) => ({
     const updatedUser = { ...currentUser, ...updates };
     set({ user: updatedUser });
     
-    // DB Update
     await updateUserInDB(updatedUser);
   },
 
+  redeemLicense: async (key: string) => {
+    const currentUser = get().user;
+    if (!currentUser) return false;
+
+    // Simulate License Validation Logic
+    // In production, verify against a backend service/DB
+    let plan = '';
+    let duration = 0;
+
+    if (key === 'LIVE-FREE-2025' || key.startsWith('NEBULA-')) {
+        plan = 'Nebula Access Pass';
+        duration = 1000 * 60 * 60 * 24 * 365; // 1 Year
+    } else {
+        return false; // Invalid Key
+    }
+
+    const newLicense: License = {
+        key: key,
+        status: 'active',
+        expiryDate: Date.now() + duration,
+        planName: plan
+    };
+
+    const updatedUser = { ...currentUser, license: newLicense };
+    set({ user: updatedUser });
+    await updateUserInDB(updatedUser);
+    return true;
+  },
+
   initialize: async () => {
-    // 0. Initialize DB Schema (Create Tables if missing)
+    // 0. Initialize DB Schema
     const dbReady = await initializeSchema();
     set({ isDbConfigured: dbReady });
 
@@ -178,9 +204,13 @@ export const useStore = create<AppState>((set, get) => ({
     if (sessionId && dbReady) {
         const user = await getUserById(sessionId);
         if (user) {
+            // Check expiry on load
+            if (user.license && user.license.expiryDate < Date.now()) {
+                user.license.status = 'expired';
+            }
             set({ user });
         } else {
-            localStorage.removeItem('nebula_session'); // Invalid session
+            localStorage.removeItem('nebula_session');
         }
     }
 
@@ -190,7 +220,6 @@ export const useStore = create<AppState>((set, get) => ({
         channels = await fetchChannelsFromDB();
     }
 
-    // Fallback to WORKING_CHANNELS if DB fails or is empty
     if (!channels || channels.length === 0) {
       console.log("System: DB empty or unreachable. Loading Emergency Protocol (Working Streams).");
       channels = WORKING_CHANNELS;
@@ -198,7 +227,6 @@ export const useStore = create<AppState>((set, get) => ({
       console.log("System: Connected to Neural Network (Live DB).");
     }
 
-    // Simulate boot delay for effect
     setTimeout(() => {
       set({
         channels: channels || [],

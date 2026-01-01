@@ -1,4 +1,12 @@
+
 export type ViewState = 'home' | 'guide' | 'player' | 'ai' | 'settings' | 'profile' | 'admin';
+
+export interface License {
+    status: 'active' | 'expired' | 'none';
+    key: string;
+    expiryDate: number; // timestamp
+    planName: string;
+}
 
 export interface User {
   id: string;
@@ -8,6 +16,7 @@ export interface User {
   coverImage?: string;
   bio: string;
   role: 'admin' | 'viewer';
+  license?: License; // New field
   preferences: {
     notifications: boolean;
     autoplay: boolean;
@@ -51,6 +60,7 @@ export interface AppState {
   login: (email: string, pass: string, role?: 'admin' | 'viewer') => Promise<boolean>;
   logout: () => void;
   updateProfile: (updates: Partial<User>) => void;
+  redeemLicense: (key: string) => Promise<boolean>; // New Action
   setView: (view: ViewState) => void;
   setChannel: (channelId: string) => void;
   removeChannel: (id: string) => void; // Admin Action

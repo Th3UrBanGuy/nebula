@@ -1,3 +1,4 @@
+
 import { neon } from '@neondatabase/serverless';
 import { Channel, User } from '../types';
 import { CONFIG } from '../config';
@@ -28,9 +29,17 @@ export const initializeSchema = async (): Promise<boolean> => {
                 avatar TEXT,
                 cover_image TEXT,
                 bio TEXT,
-                preferences JSONB
+                preferences JSONB,
+                license_data JSONB
             )
         `;
+
+        // Migration: Ensure license_data column exists for older tables
+        try {
+            await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS license_data JSONB`;
+        } catch (e) {
+            // Ignore if column exists or not supported in this dialect (Neon usually supports it)
+        }
         
         await sql`
             CREATE TABLE IF NOT EXISTS channels (
@@ -115,10 +124,10 @@ export const registerUserInDB = async (user: User, password: string): Promise<bo
   if (!sql) return false;
 
   try {
-    // Pass user.preferences object directly; Neon driver handles JSON serialization for JSONB columns.
+    // Pass objects directly; Neon driver handles JSON serialization for JSONB columns.
     await sql`
-      INSERT INTO users (id, name, email, password, role, avatar, cover_image, bio, preferences)
-      VALUES (${user.id}, ${user.name}, ${user.email}, ${password}, ${user.role}, ${user.avatar}, ${user.coverImage || null}, ${user.bio}, ${user.preferences})
+      INSERT INTO users (id, name, email, password, role, avatar, cover_image, bio, preferences, license_data)
+      VALUES (${user.id}, ${user.name}, ${user.email}, ${password}, ${user.role}, ${user.avatar}, ${user.coverImage || null}, ${user.bio}, ${user.preferences}, ${user.license || null})
     `;
     return true;
   } catch (err) {
@@ -136,17 +145,7 @@ export const loginUserFromDB = async (email: string, password: string): Promise<
     
     if (result.length > 0) {
       const row = result[0];
-      return {
-        id: row.id,
-        name: row.name,
-        email: row.email,
-        role: row.role as 'admin' | 'viewer',
-        avatar: row.avatar,
-        coverImage: row.cover_image,
-        bio: row.bio,
-        // Ensure preferences is an object
-        preferences: typeof row.preferences === 'string' ? JSON.parse(row.preferences) : (row.preferences || { notifications: true, autoplay: true })
-      };
+      return mapUserRow(row);
     }
     return null;
   } catch (err) {
@@ -162,17 +161,7 @@ export const getUserById = async (id: string): Promise<User | null> => {
     try {
         const result = await sql`SELECT * FROM users WHERE id = ${id}`;
         if (result.length > 0) {
-            const row = result[0];
-            return {
-                id: row.id,
-                name: row.name,
-                email: row.email,
-                role: row.role as 'admin' | 'viewer',
-                avatar: row.avatar,
-                coverImage: row.cover_image,
-                bio: row.bio,
-                preferences: typeof row.preferences === 'string' ? JSON.parse(row.preferences) : (row.preferences || { notifications: true, autoplay: true })
-            };
+            return mapUserRow(result[0]);
         }
         return null;
     } catch (err) {
@@ -186,7 +175,7 @@ export const updateUserInDB = async (user: User): Promise<boolean> => {
     try {
         await sql`
             UPDATE users 
-            SET name = ${user.name}, bio = ${user.bio}, avatar = ${user.avatar}, cover_image = ${user.coverImage}
+            SET name = ${user.name}, bio = ${user.bio}, avatar = ${user.avatar}, cover_image = ${user.coverImage}, license_data = ${user.license || null}
             WHERE id = ${user.id}
         `;
         return true;
@@ -195,3 +184,18 @@ export const updateUserInDB = async (user: User): Promise<boolean> => {
         return false;
     }
 }
+
+// Helper to map DB row to User object
+const mapUserRow = (row: any): User => {
+    return {
+        id: row.id,
+        name: row.name,
+        email: row.email,
+        role: row.role as 'admin' | 'viewer',
+        avatar: row.avatar,
+        coverImage: row.cover_image,
+        bio: row.bio,
+        preferences: typeof row.preferences === 'string' ? JSON.parse(row.preferences) : (row.preferences || { notifications: true, autoplay: true }),
+        license: typeof row.license_data === 'string' ? JSON.parse(row.license_data) : row.license_data
+    };
+};
