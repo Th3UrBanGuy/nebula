@@ -42,6 +42,11 @@ export const initializeSchema = async (): Promise<{ success: boolean; error?: st
                 duration_days INTEGER,
                 status TEXT,
                 created_at BIGINT
+            )`,
+            // New Settings Table for System Configs (Like Ayna URL)
+            `CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
             )`
         ];
 
@@ -56,7 +61,7 @@ export const initializeSchema = async (): Promise<{ success: boolean; error?: st
             await pool.query(`ALTER TABLE channels ADD COLUMN IF NOT EXISTS stream_url TEXT`);
             await pool.query(`ALTER TABLE channels ADD COLUMN IF NOT EXISTS color TEXT`);
             
-            // Users table migrations to prevent registration errors
+            // Users table migrations
             await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS license_data JSONB`);
             await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS preferences JSONB`);
             await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS cover_image TEXT`);
@@ -72,6 +77,33 @@ export const initializeSchema = async (): Promise<{ success: boolean; error?: st
     } catch (e: any) {
         console.error("Neon DB Init Error:", e);
         return { success: false, error: e.message };
+    }
+};
+
+// --- SETTINGS OPERATIONS ---
+
+export const getSetting = async (key: string): Promise<string | null> => {
+    try {
+        const { rows } = await pool.query('SELECT value FROM settings WHERE key = $1', [key]);
+        if (rows.length > 0) return rows[0].value;
+        return null;
+    } catch (err) {
+        console.error("Get Setting Error:", err);
+        return null;
+    }
+};
+
+export const saveSetting = async (key: string, value: string): Promise<boolean> => {
+    try {
+        await pool.query(
+            `INSERT INTO settings (key, value) VALUES ($1, $2)
+             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+            [key, value]
+        );
+        return true;
+    } catch (err) {
+        console.error("Save Setting Error:", err);
+        return false;
     }
 };
 

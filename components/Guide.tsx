@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../store';
 import { Play, SortAsc, Layers } from 'lucide-react';
-import { Channel } from '../types';
+import { Channel, ViewState } from '../types';
 
 export const Guide: React.FC = () => {
   const { channels, setChannel, setView } = useStore();
@@ -27,7 +27,7 @@ export const Guide: React.FC = () => {
   }, [channels, activeCategory, filterMode]);
 
   // Grouping for 'All' view (if not sorting A-Z)
-  const groupedChannels = useMemo(() => {
+  const groupedChannels = useMemo<Record<string, Channel[]> | null>(() => {
       if (activeCategory !== 'All' || filterMode === 'az') return null;
       
       const groups: Record<string, Channel[]> = {};
@@ -103,7 +103,7 @@ export const Guide: React.FC = () => {
                               {group}
                           </h3>
                           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                              {groupChannels.map(channel => (
+                              {(groupChannels as Channel[]).map(channel => (
                                   <ChannelCard key={channel.id} channel={channel} setChannel={setChannel} setView={setView} />
                               ))}
                           </div>
@@ -123,7 +123,13 @@ export const Guide: React.FC = () => {
   );
 };
 
-const ChannelCard = ({ channel, setChannel, setView }: { channel: Channel, setChannel: any, setView: any }) => (
+interface ChannelCardProps {
+    channel: Channel;
+    setChannel: (id: string) => void;
+    setView: (view: ViewState) => void;
+}
+
+const ChannelCard: React.FC<ChannelCardProps> = ({ channel, setChannel, setView }) => (
     <div 
         onClick={() => { setChannel(channel.id); setView('player'); }}
         className="group relative aspect-[16/9] bg-stone-900 border border-stone-800 rounded-xl overflow-hidden cursor-pointer hover:border-orange-500/50 hover:shadow-[0_0_30px_rgba(0,0,0,0.5)] transition-all hover:scale-[1.02]"

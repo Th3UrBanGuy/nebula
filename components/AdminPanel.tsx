@@ -7,14 +7,14 @@ import {
     ShieldAlert, Activity, Users, Database, AlertTriangle, 
     ArrowLeft, MonitorPlay, Key, FileText, Upload, Plus, 
     Trash2, CheckCircle, Tag, Link as LinkIcon, Info, Server, 
-    Image as ImageIcon, RefreshCw, Copy
+    Image as ImageIcon, RefreshCw, Copy, Zap
 } from 'lucide-react';
 
 export const AdminPanel: React.FC = () => {
-  const { channels, user, removeChannel, setView, importChannels, adminLicenses, fetchAdminLicenses, generateNewLicense } = useStore();
+  const { channels, user, removeChannel, setView, importChannels, adminLicenses, fetchAdminLicenses, generateNewLicense, aynaUrl, updateAynaUrl, syncAynaChannels } = useStore();
   
-  // Navigation State: 'dashboard' | 'streams' | 'licenses'
-  const [activeModule, setActiveModule] = useState<'dashboard' | 'streams' | 'licenses'>('dashboard');
+  // Navigation State: 'dashboard' | 'streams' | 'licenses' | 'ayna'
+  const [activeModule, setActiveModule] = useState<'dashboard' | 'streams' | 'licenses' | 'ayna'>('dashboard');
 
   // --- Sub-States for Streams Module ---
   const [streamTab, setStreamTab] = useState<'list' | 'create' | 'import'>('list');
@@ -26,6 +26,11 @@ export const AdminPanel: React.FC = () => {
   const [licenseForm, setLicenseForm] = useState({ plan: 'Standard Access', days: 30, customKey: '' });
   const [generatedKey, setGeneratedKey] = useState<string | null>(null);
   const [licenseError, setLicenseError] = useState<string | null>(null);
+
+  // --- Sub-States for Ayna Module ---
+  const [aynaInput, setAynaInput] = useState(aynaUrl);
+  const [aynaStatus, setAynaStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
+  const [aynaMsg, setAynaMsg] = useState('');
 
   // Security Gate
   if (user?.role !== 'admin') {
@@ -125,6 +130,22 @@ export const AdminPanel: React.FC = () => {
       alert("Copied: " + text);
   };
 
+  // --- LOGIC: Ayna Sync ---
+  const handleAynaSync = async () => {
+      setAynaStatus('syncing');
+      await updateAynaUrl(aynaInput); // Save URL first
+      
+      const result = await syncAynaChannels();
+      
+      if (result.success) {
+          setAynaStatus('success');
+          setAynaMsg(`Live Feed Active. Loaded ${result.count} Channels.`);
+      } else {
+          setAynaStatus('error');
+          setAynaMsg(result.error || "Sync failed.");
+      }
+  };
+
   // Fetch licenses when entering module
   useEffect(() => {
       if (activeModule === 'licenses') {
@@ -193,29 +214,100 @@ export const AdminPanel: React.FC = () => {
                      </div>
                  </div>
 
-                 {/* Card 3: System Stats (Non-clickable summary) */}
-                 <div className="md:col-span-2 bg-black/40 border border-stone-800 p-8 rounded-3xl flex flex-col md:flex-row items-center justify-between">
-                     <div className="flex items-center space-x-6 mb-6 md:mb-0">
-                         <div className="p-4 bg-stone-800 rounded-full">
-                             <Server className="w-6 h-6 text-blue-400" />
-                         </div>
-                         <div>
-                             <h3 className="text-lg font-bold text-white">System Status</h3>
-                             <p className="text-stone-500 text-sm">All systems operational. Database latency: 12ms</p>
-                         </div>
+                 {/* Card 3: Ayna Auto Script (New) */}
+                 <div 
+                    onClick={() => setActiveModule('ayna')}
+                    className="group bg-stone-900/60 border border-stone-800 hover:border-blue-500 hover:bg-stone-900 p-8 rounded-3xl cursor-pointer transition-all duration-300 relative overflow-hidden shadow-2xl md:col-span-2"
+                 >
+                     <div className="absolute right-0 top-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity">
+                         <Zap className="w-40 h-40 text-blue-500" />
                      </div>
-                     <div className="flex space-x-8 text-center">
-                         <div>
-                             <div className="text-2xl font-black text-white">4.2 TB</div>
-                             <div className="text-[10px] font-bold text-stone-500 uppercase tracking-widest">Bandwidth</div>
-                         </div>
-                         <div>
-                             <div className="text-2xl font-black text-white">99.9%</div>
-                             <div className="text-[10px] font-bold text-stone-500 uppercase tracking-widest">Uptime</div>
-                         </div>
+                     <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg shadow-blue-600/20 group-hover:scale-110 transition-transform">
+                         <RefreshCw className="w-8 h-8 text-white" />
+                     </div>
+                     <h2 className="text-2xl font-black text-white mb-2">Ayna OTT Auto Script</h2>
+                     <p className="text-stone-400 text-sm mb-6 max-w-sm">Automated content fetching protocol. Synchronize directly with external JSON feeds. No Database overhead.</p>
+                     
+                     <div className="flex items-center space-x-4 text-xs font-mono text-stone-500">
+                         <span className="flex items-center"><LinkIcon className="w-3 h-3 mr-1" /> Dynamic Feed</span>
+                         <span className="flex items-center text-blue-500 truncate max-w-[200px]">{aynaUrl}</span>
                      </div>
                  </div>
 
+             </div>
+        </div>
+      );
+  }
+
+  // --- VIEW: Ayna Auto Script Module ---
+  if (activeModule === 'ayna') {
+      return (
+        <div className="w-full h-full flex flex-col bg-stone-950">
+             <div className="bg-stone-900 border-b border-stone-800 p-4 flex items-center justify-between shadow-lg z-20">
+                 <div className="flex items-center space-x-4">
+                     <button onClick={() => setActiveModule('dashboard')} className="p-2 hover:bg-stone-800 rounded-lg text-stone-400 hover:text-white transition-colors">
+                         <ArrowLeft className="w-6 h-6" />
+                     </button>
+                     <div className="h-8 w-px bg-stone-700 mx-2" />
+                     <h2 className="text-xl font-black text-white uppercase tracking-wider flex items-center">
+                         <Zap className="w-5 h-5 mr-3 text-blue-500" />
+                         Ayna Auto Script
+                     </h2>
+                 </div>
+             </div>
+
+             <div className="flex-1 p-8 md:p-16 flex flex-col items-center justify-center relative overflow-hidden">
+                 {/* Background Effect */}
+                 <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none">
+                     <div className="w-[500px] h-[500px] bg-blue-500/20 rounded-full blur-[100px]" />
+                 </div>
+
+                 <div className="w-full max-w-2xl bg-stone-900/50 backdrop-blur-xl border border-stone-800 rounded-3xl p-8 shadow-2xl relative z-10">
+                     <h3 className="text-2xl font-bold text-white mb-6">Configuration</h3>
+                     
+                     <div className="mb-8">
+                         <label className="text-xs font-bold text-stone-500 uppercase tracking-widest mb-3 block">JSON Feed URL</label>
+                         <div className="flex space-x-2">
+                            <input 
+                                value={aynaInput} 
+                                onChange={(e) => setAynaInput(e.target.value)} 
+                                className="flex-1 bg-black/50 border border-stone-700 rounded-xl p-4 text-white font-mono text-sm focus:border-blue-500 outline-none transition-colors"
+                            />
+                         </div>
+                         <p className="text-[10px] text-stone-500 mt-2">Points to the raw JSON output containing the 'channels' array. Updates are transient and strictly client-side.</p>
+                     </div>
+
+                     <div className="flex flex-col items-center">
+                         <button 
+                            onClick={handleAynaSync} 
+                            disabled={aynaStatus === 'syncing'}
+                            className={`
+                                w-full py-5 rounded-2xl font-black text-lg uppercase tracking-widest shadow-lg transition-all flex items-center justify-center
+                                ${aynaStatus === 'syncing' ? 'bg-stone-800 text-stone-500 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-500 text-white hover:shadow-blue-500/20'}
+                            `}
+                         >
+                            {aynaStatus === 'syncing' ? (
+                                <><RefreshCw className="w-6 h-6 mr-3 animate-spin" /> Fetching Live Feed...</>
+                            ) : (
+                                <><Zap className="w-6 h-6 mr-3" /> Refresh Auto Script</>
+                            )}
+                         </button>
+
+                         {aynaStatus === 'success' && (
+                             <div className="mt-6 p-4 bg-green-900/20 border border-green-500/50 rounded-xl w-full text-center animate-fade-in-up">
+                                 <CheckCircle className="w-6 h-6 text-green-500 mx-auto mb-2" />
+                                 <p className="text-green-400 font-bold">{aynaMsg}</p>
+                             </div>
+                         )}
+
+                         {aynaStatus === 'error' && (
+                             <div className="mt-6 p-4 bg-red-900/20 border border-red-500/50 rounded-xl w-full text-center animate-pulse">
+                                 <AlertTriangle className="w-6 h-6 text-red-500 mx-auto mb-2" />
+                                 <p className="text-red-400 font-bold">{aynaMsg}</p>
+                             </div>
+                         )}
+                     </div>
+                 </div>
              </div>
         </div>
       );

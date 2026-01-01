@@ -65,6 +65,9 @@ export interface AppState {
   programs: Program[];
   isLoading: boolean;
   adminLicenses: LicenseKey[]; // Cache for admin view
+  
+  // Ayna Auto Script Config
+  aynaUrl: string;
 
   // Actions
   login: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
@@ -74,6 +77,11 @@ export interface AppState {
   redeemLicense: (key: string) => Promise<boolean>;
   generateNewLicense: (plan: string, days: number) => Promise<void>;
   fetchAdminLicenses: () => Promise<void>;
+  
+  // Ayna Actions
+  updateAynaUrl: (url: string) => Promise<void>;
+  syncAynaChannels: () => Promise<{ success: boolean; count: number; error?: string }>;
+
   setView: (view: ViewState) => void;
   setChannel: (channelId: string) => void;
   removeChannel: (id: string) => void;

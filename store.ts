@@ -1,7 +1,7 @@
 
 import { create } from 'zustand';
-import { AppState, generateMockPrograms, ViewState, User, CHARACTER_AVATARS, COVER_SCENES, License } from './types';
-import { fetchChannelsFromDB, addChannelsToDB, deleteChannelFromDB, loginUserFromDB, registerUserInDB, getUserById, updateUserInDB, initializeSchema, createLicenseInDB, fetchAllLicenses, redeemLicenseKey } from './services/database';
+import { AppState, generateMockPrograms, ViewState, User, CHARACTER_AVATARS, COVER_SCENES, License, Channel } from './types';
+import { fetchChannelsFromDB, addChannelsToDB, deleteChannelFromDB, loginUserFromDB, registerUserInDB, getUserById, updateUserInDB, initializeSchema, createLicenseInDB, fetchAllLicenses, redeemLicenseKey, getSetting, saveSetting } from './services/database';
 
 // Updated MOCK_CHANNELS with REAL WORKING PUBLIC STREAMS for demonstration
 // Using reliable CDN test streams (Mux, Akamai) to ensure playback stability in prototype mode
@@ -84,6 +84,7 @@ export const useStore = create<AppState>((set, get) => ({
   programs: [],
   isLoading: true,
   adminLicenses: [],
+  aynaUrl: "https://raw.githubusercontent.com/devmujahidul/Auto_Fetch/main/output.json",
 
   setView: (view: ViewState) => set({ view }),
   
@@ -97,7 +98,10 @@ export const useStore = create<AppState>((set, get) => ({
     set((state) => ({
       channels: state.channels.filter(c => c.id !== id)
     }));
-    await deleteChannelFromDB(id);
+    // Only delete from DB if it's NOT an auto-synced channel
+    if (!id.startsWith('ayna_')) {
+        await deleteChannelFromDB(id);
+    }
   },
 
   importChannels: async (newChannels) => {
@@ -108,19 +112,67 @@ export const useStore = create<AppState>((set, get) => ({
     await addChannelsToDB(newChannels);
   },
 
-  // Auth Actions
-  // NOTE: We do not set global isLoading here to avoid unmounting the Auth component during submission
+  // --- AYNA AUTO SCRIPT ACTIONS ---
+  
+  updateAynaUrl: async (url: string) => {
+    set({ aynaUrl: url });
+    await saveSetting('ayna_json_url', url);
+  },
+
+  syncAynaChannels: async () => {
+    const url = get().aynaUrl;
+    try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("Failed to fetch JSON");
+
+        const data = await res.json();
+        const externalChannels = data.channels || [];
+
+        if (externalChannels.length === 0) throw new Error("No channels found in JSON");
+
+        // Map without saving to DB (Transient State)
+        const mappedChannels: Channel[] = externalChannels.map((c: any) => ({
+            id: `ayna_${c.id || Math.random().toString(36).substr(2,9)}`,
+            number: c.keyCode ? `A${c.keyCode}` : 'AUTO',
+            name: c.title || "Unknown Channel",
+            logo: c.image || c.logo || "https://placehold.co/400?text=NO+LOGO",
+            provider: 'Ayna OTT',
+            category: 'Ayna OTT', // New Group Requirement
+            color: 'bg-indigo-900',
+            description: `Auto-synced from Ayna OTT. Age Limit: ${c.ageLimit || 0}+`,
+            streamUrl: c.url // Dynamic URL with token
+        }));
+
+        // Filter out existing Ayna channels from state to replace them
+        const currentChannels = get().channels;
+        const dbChannels = currentChannels.filter(c => !c.id.startsWith('ayna_'));
+        
+        const newSet = [...dbChannels, ...mappedChannels];
+
+        set({ 
+            channels: newSet,
+            programs: generateMockPrograms(newSet) 
+        });
+
+        // NOTE: We do NOT call addChannelsToDB here. 
+        // These are dynamic resources handled by the Auto Script.
+
+        return { success: true, count: mappedChannels.length };
+    } catch (e: any) {
+        console.error("Ayna Sync Error:", e);
+        return { success: false, count: 0, error: e.message };
+    }
+  },
+
+  // --- Auth Actions ---
   login: async (email, pass) => {
-    // Attempt Login
     const user = await loginUserFromDB(email, pass);
     
     if (user) {
-        // Persist Session
         localStorage.setItem('nebula_session', user.id);
         set({ user });
         return { success: true };
     }
-
     return { success: false, error: "Invalid credentials." };
   },
 
@@ -144,7 +196,6 @@ export const useStore = create<AppState>((set, get) => ({
       const result = await registerUserInDB(newUser, pass);
       
       if (result.success) {
-          // Auto login on register
           localStorage.setItem('nebula_session', newUser.id);
           set({ user: newUser });
           return { success: true };
@@ -161,10 +212,8 @@ export const useStore = create<AppState>((set, get) => ({
   updateProfile: async (updates) => {
     const currentUser = get().user;
     if (!currentUser) return;
-
     const updatedUser = { ...currentUser, ...updates };
     set({ user: updatedUser });
-    
     await updateUserInDB(updatedUser);
   },
 
@@ -172,7 +221,6 @@ export const useStore = create<AppState>((set, get) => ({
     const currentUser = get().user;
     if (!currentUser) return false;
 
-    // Verify key in DB
     const { valid, plan, days } = await redeemLicenseKey(key);
 
     if (valid && plan && days) {
@@ -183,35 +231,29 @@ export const useStore = create<AppState>((set, get) => ({
             expiryDate: Date.now() + durationMs,
             planName: plan
         };
-
         const updatedUser = { ...currentUser, license: newLicense };
         set({ user: updatedUser });
         await updateUserInDB(updatedUser);
         return true;
     }
-
     return false;
   },
 
   generateNewLicense: async (plan: string, days: number, customKey?: string) => {
     let key;
-
     if (customKey && customKey.trim().length > 0) {
         key = customKey.trim().toUpperCase();
     } else {
-        // Generate format: NEBULA-XXXX-XXXX
         const randomPart = Math.random().toString(36).substr(2, 8).toUpperCase();
         key = `NEBULA-${randomPart.slice(0,4)}-${randomPart.slice(4,8)}`;
     }
-    
     const result = await createLicenseInDB(key, plan, days);
     if (result.success) {
-        // Refresh local cache
         const licenses = await fetchAllLicenses();
         set({ adminLicenses: licenses });
     } else {
         console.error(result.message);
-        throw new Error(result.message); // Propagate error for UI handling
+        throw new Error(result.message);
     }
   },
 
@@ -221,7 +263,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   initialize: async () => {
-    // 0. Initialize Mock DB and Migrations
+    // 0. Initialize DB Schema
     await initializeSchema();
 
     // 1. Restore Session
@@ -229,7 +271,6 @@ export const useStore = create<AppState>((set, get) => ({
     if (sessionId) {
         const user = await getUserById(sessionId);
         if (user) {
-            // Check expiry on load
             if (user.license && user.license.expiryDate < Date.now()) {
                 user.license.status = 'expired';
             }
@@ -239,22 +280,49 @@ export const useStore = create<AppState>((set, get) => ({
         }
     }
 
-    // 2. Fetch Content
-    let channels = await fetchChannelsFromDB();
-
-    // 3. Seed Mock Content if DB is empty (First run)
-    if (!channels || channels.length === 0) {
+    // 2. Fetch DB Content (Manual Channels)
+    let dbChannels = await fetchChannelsFromDB();
+    if (!dbChannels || dbChannels.length === 0) {
       console.log("System: Proto DB empty. Seeding default channels.");
-      channels = WORKING_CHANNELS;
+      dbChannels = WORKING_CHANNELS;
       await addChannelsToDB(WORKING_CHANNELS);
-    } else {
-      console.log("System: Loaded channels from local prototype storage.");
     }
+
+    // 3. Auto Fetch Ayna Content (Dynamic Channels)
+    let aynaChannels: Channel[] = [];
+    try {
+        const savedUrl = await getSetting('ayna_json_url');
+        const urlToUse = savedUrl || get().aynaUrl;
+        if (savedUrl) set({ aynaUrl: savedUrl });
+
+        console.log("AutoScript: Fetching Ayna Feed...", urlToUse);
+        const res = await fetch(urlToUse);
+        if (res.ok) {
+            const data = await res.json();
+            aynaChannels = (data.channels || []).map((c: any) => ({
+                id: `ayna_${c.id}`,
+                number: c.keyCode ? `A${c.keyCode}` : 'AUTO',
+                name: c.title || "Unknown",
+                logo: c.image || c.logo || "",
+                provider: 'Ayna OTT',
+                category: 'Ayna OTT',
+                color: 'bg-indigo-900',
+                description: `Dynamic Stream. Age: ${c.ageLimit || 0}+`,
+                streamUrl: c.url
+            }));
+            console.log(`AutoScript: Loaded ${aynaChannels.length} dynamic channels.`);
+        }
+    } catch (e) {
+        console.warn("AutoScript: Failed to load dynamic channels.", e);
+    }
+
+    // 4. Merge (DB + Dynamic)
+    const allChannels = [...(dbChannels || []), ...aynaChannels];
 
     setTimeout(() => {
       set({
-        channels: channels || [],
-        programs: generateMockPrograms(channels || []),
+        channels: allChannels,
+        programs: generateMockPrograms(allChannels),
         isLoading: false
       });
     }, 1000);
