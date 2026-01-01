@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useStore } from '../store';
 import videojs from 'video.js';
-import { Maximize2, Minimize2, Volume2, VolumeX, Pause, Play, Settings, AlertCircle, Loader2, RefreshCw } from 'lucide-react';
+import { Maximize2, Minimize2, Volume2, VolumeX, Pause, Play, Settings, AlertTriangle, Loader2, RefreshCw, Radio, Signal } from 'lucide-react';
 
 interface VideoPlayerProps {
   isMini: boolean;
@@ -10,16 +10,24 @@ interface VideoPlayerProps {
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
   const { activeChannelId, channels, isPlaying, volume, togglePlay, setView } = useStore();
   const videoContainerRef = useRef<HTMLDivElement>(null);
-  const playerRef = useRef<any>(null); // Using any for VideoJS player instance to avoid tight type coupling in this setup
+  const playerRef = useRef<any>(null); 
   const controlsTimeoutRef = useRef<number | null>(null);
 
+  // 0 = Direct, 1 = Proxy
+  const [connectionMode, setConnectionMode] = useState<0 | 1>(0);
   const [error, setError] = useState<string | null>(null);
   const [showControls, setShowControls] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
   const channel = channels.find(c => c.id === activeChannelId);
 
-  // --- Keyboard & User Interaction Logic ---
+  // Reset connection mode when channel changes
+  useEffect(() => {
+    setConnectionMode(0);
+    setError(null);
+  }, [activeChannelId]);
+
+  // --- Keyboard Logic ---
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
         if (isMini) return;
@@ -37,7 +45,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
                 break;
         }
     };
-
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isMini, togglePlay]);
@@ -56,54 +63,92 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
       }
   };
 
-  // --- Video.js Initialization & Management ---
+  // --- Smart Stream URL Generator ---
+  const getStreamUrl = useCallback(() => {
+    if (!channel?.streamUrl) return '';
+    
+    // Mode 0: Direct Connection
+    if (connectionMode === 0) return channel.streamUrl;
+
+    // Mode 1: CORS/HTTPS Proxy Tunneling
+    // We use a public CORS proxy to bypass restriction. 
+    // In production, this should be your own proxy server.
+    return `https://corsproxy.io/?${encodeURIComponent(channel.streamUrl)}`;
+  }, [channel, connectionMode]);
+
+  // --- Video.js Initialization ---
   useEffect(() => {
     if (!channel || !channel.streamUrl || !videoContainerRef.current) return;
 
     setIsLoading(true);
-    setError(null);
+    // Don't clear error immediately if we are retrying in mode 1, to show "Rerouting" status
+    if (connectionMode === 0) setError(null);
 
-    // If player exists, dispose it to create a fresh one for the new channel
+    // Dispose old player
     if (playerRef.current) {
         playerRef.current.dispose();
         playerRef.current = null;
     }
 
-    // Create the video-js element dynamically
     const videoElement = document.createElement("video-js");
     videoElement.classList.add('vjs-default-skin', 'vjs-big-play-centered', 'vjs-fill');
+    videoElement.setAttribute('crossorigin', 'anonymous');
     videoContainerRef.current.appendChild(videoElement);
+
+    const currentSrc = getStreamUrl();
 
     const options = {
         autoplay: isPlaying,
-        controls: false, // We use our custom UI
+        controls: false,
         responsive: true,
         fluid: true,
         sources: [{
-            src: channel.streamUrl,
+            src: currentSrc,
             type: 'application/x-mpegURL'
         }],
         html5: {
             vhs: {
-                overrideNative: true
-            }
+                overrideNative: true,
+                enableLowInitialPlaylist: true,
+                handleManifestRedirects: true,
+                bandwidth: 4194304, // Start with reasonable bandwidth assumption
+                limitRenditionByPlayerDimensions: false,
+                smoothQualityChange: true,
+                cacheEncryptionKeys: true,
+            },
+            nativeAudioTracks: false,
+            nativeVideoTracks: false
         }
     };
 
     const player = playerRef.current = videojs(videoElement, options, () => {
-        setIsLoading(false);
-        console.log('VideoJS Player Ready');
+        console.log(`Player Ready (Mode: ${connectionMode === 0 ? 'Direct' : 'Proxy'})`);
+        if (connectionMode === 1) {
+            setIsLoading(false); // Proxy loaded successfully
+            setError(null);
+        }
     });
 
+    // --- Event Listeners ---
     player.on('waiting', () => setIsLoading(true));
+    player.on('stalled', () => setIsLoading(true));
     player.on('playing', () => setIsLoading(false));
     player.on('canplay', () => setIsLoading(false));
     
     player.on('error', () => {
-        setIsLoading(false);
         const err = player.error();
-        console.error("VideoJS Error:", err);
-        setError(err?.message || "Stream Connection Failed");
+        console.warn("Player Error:", err);
+        
+        // Auto-Recovery Logic
+        if (connectionMode === 0) {
+            console.log("Direct connection failed. Attempting proxy reroute...");
+            setIsLoading(true);
+            setError("Rerouting Signal...");
+            setTimeout(() => setConnectionMode(1), 1000); // Trigger re-render with proxy
+        } else {
+            setIsLoading(false);
+            setError("Signal Lost. Source Unreachable.");
+        }
     });
 
     return () => {
@@ -112,23 +157,20 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
             playerRef.current = null;
         }
     };
-  }, [channel?.id, channel?.streamUrl]);
+  }, [channel?.id, channel?.streamUrl, connectionMode, getStreamUrl]);
 
-  // --- Sync Global State with Player ---
-  
-  // Sync Play/Pause
+  // Sync Global State
   useEffect(() => {
     const player = playerRef.current;
     if (player && !player.isDisposed()) {
         if (isPlaying && player.paused()) {
-            player.play()?.catch((e: any) => console.log("Play interrupted", e));
+            player.play()?.catch(() => {});
         } else if (!isPlaying && !player.paused()) {
             player.pause();
         }
     }
   }, [isPlaying]);
 
-  // Sync Volume
   useEffect(() => {
     const player = playerRef.current;
     if (player && !player.isDisposed()) {
@@ -136,25 +178,23 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
     }
   }, [volume]);
 
-
   if (!channel) return null;
 
   const handleMiniClick = () => {
       if (isMini) setView('player');
   };
 
-  const handleRetry = (e: React.MouseEvent) => {
+  const handleManualRetry = (e: React.MouseEvent) => {
       e.stopPropagation();
-      if (channel?.streamUrl && playerRef.current) {
-          setError(null);
-          setIsLoading(true);
-          playerRef.current.src({ src: channel.streamUrl, type: 'application/x-mpegURL' });
-          playerRef.current.load();
-          playerRef.current.play();
-      }
+      setConnectionMode(0); // Reset to direct
+      setTimeout(() => {
+        if(playerRef.current) {
+            playerRef.current.src({ src: channel.streamUrl, type: 'application/x-mpegURL' });
+            playerRef.current.load();
+            playerRef.current.play().catch(() => {});
+        }
+      }, 100);
   };
-
-  const hasRealStream = !!channel.streamUrl;
 
   return (
     <div 
@@ -163,9 +203,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
         onDoubleClick={toggleFullscreen}
         className={`relative w-full h-full bg-black group overflow-hidden ${isMini ? 'cursor-pointer' : ''}`}
     >
-      {/* Video Container for VideoJS */}
       <div className="absolute inset-0 bg-black flex items-center justify-center">
-         {hasRealStream ? (
+         {channel.streamUrl ? (
             <div data-vjs-player className="w-full h-full">
                 <div ref={videoContainerRef} className="w-full h-full" />
             </div>
@@ -180,24 +219,35 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
          )}
       </div>
 
-      {/* Overlays (Loading / Error) */}
-      {hasRealStream && (
+      {/* Status Overlays */}
+      {channel.streamUrl && (
         <>
-            {isLoading && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-20 backdrop-blur-sm pointer-events-none">
-                    <Loader2 className="w-10 h-10 text-orange-500 animate-spin" />
+            {isLoading && !error && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 z-20 backdrop-blur-sm pointer-events-none transition-all">
+                    <Loader2 className="w-10 h-10 text-orange-500 animate-spin mb-3" />
+                    <div className="flex items-center space-x-2 text-stone-300 text-xs font-mono uppercase tracking-widest">
+                        {connectionMode === 1 ? (
+                            <>
+                                <Signal className="w-3 h-3 text-green-500" />
+                                <span>Establishing Secure Tunnel...</span>
+                            </>
+                        ) : (
+                            <span>Acquiring Signal...</span>
+                        )}
+                    </div>
                 </div>
             )}
-            {error && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-stone-900/95 z-30 p-6 text-center">
-                    <AlertCircle className="w-12 h-12 text-red-500 mb-2" />
-                    <p className="text-white font-bold mb-1">Signal Lost</p>
-                    <p className="text-stone-400 text-xs font-mono mb-4">{error}</p>
+            
+            {error && (error !== "Rerouting Signal...") && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-stone-900/95 z-30 p-6 text-center animate-fade-in">
+                    <AlertTriangle className="w-12 h-12 text-red-500 mb-2" />
+                    <p className="text-white font-bold mb-1">Transmission Interrupted</p>
+                    <p className="text-stone-500 text-xs font-mono mb-6 uppercase tracking-wider">{error}</p>
                     <button 
-                        onClick={handleRetry}
-                        className="flex items-center px-4 py-2 bg-stone-800 hover:bg-stone-700 text-white rounded-full text-sm font-bold transition-colors border border-stone-600"
+                        onClick={handleManualRetry}
+                        className="flex items-center px-6 py-3 bg-stone-800 hover:bg-stone-700 text-white rounded-full text-sm font-bold transition-all border border-stone-700 hover:border-orange-500 hover:shadow-[0_0_20px_rgba(234,88,12,0.2)]"
                     >
-                        <RefreshCw className="w-4 h-4 mr-2" /> Retry Connection
+                        <RefreshCw className="w-4 h-4 mr-2" /> Re-establish Link
                     </button>
                 </div>
             )}
@@ -211,7 +261,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
                 <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center space-x-2">
                         {isLoading ? <Loader2 className="w-3 h-3 text-orange-500 animate-spin" /> : 
-                        <span className="text-[10px] bg-red-600 text-white px-1.5 py-0.5 rounded font-bold uppercase">Live</span>}
+                        <span className="text-[10px] bg-red-600 text-white px-1.5 py-0.5 rounded font-bold uppercase flex items-center">
+                            <Radio className="w-2 h-2 mr-1" /> Live
+                        </span>}
+                        {connectionMode === 1 && <span className="text-[8px] text-green-500 font-mono border border-green-900 bg-green-900/20 px-1 rounded">SECURE</span>}
                     </div>
                     <Maximize2 className="text-white w-4 h-4" />
                 </div>
@@ -220,10 +273,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
         </div>
       )}
 
-      {/* Full Player Controls (Custom UI) */}
+      {/* Full Player Controls */}
       {!isMini && (
         <div className={`absolute inset-0 flex flex-col justify-between p-6 md:p-10 z-40 transition-opacity duration-300 ${showControls || !isPlaying ? 'opacity-100' : 'opacity-0'}`}>
-            {/* Top Bar */}
             <div className="flex justify-between items-start bg-gradient-to-b from-black/80 to-transparent p-4 -mx-4 -mt-4">
                 <div className="flex items-center space-x-4">
                     <div className="w-10 h-10 rounded-lg bg-stone-800 overflow-hidden flex items-center justify-center border border-stone-700">
@@ -233,7 +285,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
                         <h2 className="text-white font-bold text-lg md:text-xl shadow-black drop-shadow-md">{channel.name}</h2>
                         <div className="flex items-center space-x-2">
                              <div className={`w-2 h-2 rounded-full ${error ? 'bg-red-900' : 'bg-red-600 animate-pulse'}`} />
-                             <span className="text-red-500 text-xs font-bold uppercase tracking-widest shadow-black drop-shadow-sm">{error ? 'OFFLINE' : 'Live'}</span>
+                             <span className="text-red-500 text-xs font-bold uppercase tracking-widest shadow-black drop-shadow-sm">{error ? 'OFFLINE' : 'LIVE'}</span>
+                             {connectionMode === 1 && (
+                                <span className="ml-2 text-[10px] text-stone-400 font-mono flex items-center bg-stone-900/50 px-2 py-0.5 rounded-full border border-stone-800">
+                                    <Signal className="w-2 h-2 mr-1 text-green-500" /> Proxy Active
+                                </span>
+                             )}
                         </div>
                     </div>
                 </div>
@@ -245,10 +302,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
                 </div>
             </div>
 
-            {/* Bottom Controls */}
             <div className="space-y-4 bg-gradient-to-t from-black/90 to-transparent p-4 -mx-4 -mb-4 pb-8">
                  <div className="w-full h-1.5 bg-stone-700/50 rounded-full overflow-hidden backdrop-blur-sm cursor-pointer hover:h-2 transition-all">
-                        <div className="h-full bg-orange-600 w-full relative"></div>
+                        <div className="h-full bg-orange-600 w-full relative">
+                             <div className="absolute right-0 top-0 bottom-0 w-2 bg-white shadow-[0_0_10px_white]"></div>
+                        </div>
                  </div>
 
                 <div className="flex items-center justify-between">
