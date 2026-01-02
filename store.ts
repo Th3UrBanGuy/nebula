@@ -7,8 +7,8 @@ import { fetchChannelsFromDB, addChannelsToDB, deleteChannelFromDB, loginUserFro
 export const useStore = create<AppState>((set, get) => ({
   user: null, // Start unauthenticated
   view: 'home',
-  activeChannelId: 'nasa',
-  isPlaying: true,
+  activeChannelId: null, // Initially no channel selected
+  isPlaying: false,
   volume: 80,
   channels: [],
   programs: [],
@@ -26,7 +26,10 @@ export const useStore = create<AppState>((set, get) => ({
 
   removeChannel: async (id: string) => {
     set((state) => ({
-      channels: state.channels.filter(c => c.id !== id)
+      channels: state.channels.filter(c => c.id !== id),
+      // If we remove the active channel, stop playing
+      activeChannelId: state.activeChannelId === id ? null : state.activeChannelId,
+      isPlaying: state.activeChannelId === id ? false : state.isPlaying
     }));
     // Only delete from DB if it's NOT an auto-synced channel
     if (!id.startsWith('ayna_')) {
@@ -136,7 +139,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   logout: () => {
     localStorage.removeItem('nebula_session');
-    set({ user: null, view: 'home' });
+    set({ user: null, view: 'home', activeChannelId: null, isPlaying: false });
   },
 
   updateProfile: async (updates) => {

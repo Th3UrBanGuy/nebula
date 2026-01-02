@@ -58,7 +58,7 @@ export interface Program {
 export interface AppState {
   user: User | null;
   view: ViewState;
-  activeChannelId: string;
+  activeChannelId: string | null;
   isPlaying: boolean;
   volume: number;
   channels: Channel[];

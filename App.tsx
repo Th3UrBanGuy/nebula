@@ -14,7 +14,7 @@ import { SubscriptionWall } from './components/SubscriptionWall';
 import { SplashScreen } from './components/SplashScreen';
 
 const App: React.FC = () => {
-  const { view, initialize, isLoading, user } = useStore();
+  const { view, initialize, isLoading, user, activeChannelId } = useStore();
   const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
@@ -90,14 +90,14 @@ const App: React.FC = () => {
               </div>
           </div>
 
-          {/* Persistent Player (PIP) - Responsive Size & Auto-Hide */}
+          {/* Persistent Player (PIP) - Responsive Size & Auto-Hide. ONLY RENDER IF CHANNEL ACTIVE */}
           <div className={`fixed transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] shadow-[0_20px_60px_rgba(0,0,0,0.8)] overflow-hidden bg-black
             ${view === 'player' 
               ? 'inset-0 z-50 rounded-none' 
               : `
                  z-40 rounded-xl border border-stone-700/50 cursor-pointer group hover:scale-105 hover:shadow-[0_0_40px_rgba(234,88,12,0.3)] hover:border-orange-500/50
                  bottom-24 right-4 w-36 h-20 md:bottom-32 md:right-8 md:w-80 md:h-44
-                 ${isPlayerHidden ? 'opacity-0 pointer-events-none translate-y-10 scale-90' : 'opacity-100'}
+                 ${(isPlayerHidden || !activeChannelId) ? 'opacity-0 pointer-events-none translate-y-10 scale-90' : 'opacity-100'}
                 `
             }
           `}>
