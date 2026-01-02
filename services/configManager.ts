@@ -9,13 +9,23 @@ export const ConfigManager = {
     /**
      * Retrieves the Database Connection String using a 4-Tier Robust Strategy.
      * 1. Vite/Vercel Environment Variables (Highest Priority)
-     * 2. Runtime Window Injection (For Docker/Enterprise wrappers)
+     * 2. Runtime Injection (For Docker/Enterprise wrappers)
      * 3. Local Secrets File (For local dev overrides)
      * 4. Hardcoded Fallback (Failsafe)
      */
     getDatabaseUrl: (): string => {
         // Tier 1: Environment Variables (Standard Vercel/Vite Setup)
-        const envVar = import.meta.env.VITE_DATABASE_URL;
+        let envVar: string | undefined = undefined;
+        try {
+            // Safety check: import.meta.env might be undefined in some non-Vite contexts
+            // or if the build process hasn't injected it yet.
+            if (typeof import.meta !== 'undefined' && import.meta.env) {
+                envVar = import.meta.env.VITE_DATABASE_URL;
+            }
+        } catch (e) {
+            console.warn("Config: Environment variable access check failed", e);
+        }
+
         if (isValidUrl(envVar)) {
             console.log("Config: Loaded from Environment Variables");
             return envVar;
@@ -45,7 +55,14 @@ export const ConfigManager = {
      * Helper to get other non-sensitive settings
      */
     getAppMode: (): string => {
-        return import.meta.env.MODE || 'production';
+        try {
+            if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.MODE) {
+                return import.meta.env.MODE;
+            }
+            return 'production';
+        } catch {
+            return 'production';
+        }
     }
 };
 
