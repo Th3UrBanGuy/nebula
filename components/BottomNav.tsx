@@ -1,10 +1,11 @@
+
 import React, { useState } from 'react';
 import { Home, Tv, LayoutGrid, Search, Settings, Shield, UserCircle, Mic } from 'lucide-react';
 import { useStore } from '../store';
 import { ViewState } from '../types';
 
 export const BottomNav: React.FC = () => {
-  const { view, setView, user } = useStore();
+  const { view, setView, user, activeChannelId } = useStore();
   const [searchFocused, setSearchFocused] = useState(false);
 
   // Reusable Dock Icon
@@ -39,8 +40,11 @@ export const BottomNav: React.FC = () => {
         <div className="pointer-events-auto flex items-center p-3 md:p-4 bg-stone-950/40 backdrop-blur-2xl border border-stone-800/50 rounded-[2rem] shadow-[0_20px_40px_rgba(0,0,0,0.6)] space-x-2 md:space-x-4 transition-all duration-300 hover:bg-stone-950/60 hover:border-stone-700/50">
             
             <DockItem id="home" icon={Home} label="Home" />
-            <DockItem id="guide" icon={LayoutGrid} label="Guide" />
-            <DockItem id="player" icon={Tv} label="Now Playing" color="text-orange-500" />
+            <DockItem id="guide" icon={LayoutGrid} label="All Channels" />
+            
+            {activeChannelId && (
+              <DockItem id="player" icon={Tv} label="Now Playing" color="text-orange-500" />
+            )}
             
             {/* Divider */}
             <div className="w-px h-8 bg-stone-800 mx-2" />

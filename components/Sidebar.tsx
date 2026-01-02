@@ -1,10 +1,11 @@
+
 import React from 'react';
 import { Home, Tv, LayoutGrid, Search, Settings, UserCircle, Shield } from 'lucide-react';
 import { useStore } from '../store';
 import { ViewState } from '../types';
 
 export const Sidebar: React.FC = () => {
-  const { view, setView, user } = useStore();
+  const { view, setView, user, activeChannelId } = useStore();
 
   const NavItem = ({ id, icon: Icon, label }: { id: ViewState, icon: any, label: string }) => (
     <button
@@ -34,8 +35,12 @@ export const Sidebar: React.FC = () => {
 
       <nav className="flex-1 flex flex-col w-full px-4 items-center overflow-y-auto no-scrollbar space-y-2">
         <NavItem id="home" icon={Home} label="Home" />
-        <NavItem id="guide" icon={LayoutGrid} label="Guide" />
-        <NavItem id="player" icon={Tv} label="Watch" />
+        <NavItem id="guide" icon={LayoutGrid} label="Channels" />
+        
+        {activeChannelId && (
+          <NavItem id="player" icon={Tv} label="Watch" />
+        )}
+        
         <NavItem id="ai" icon={Search} label="Search" />
         
         <div className="mt-auto pt-8 border-t border-stone-800 w-full flex flex-col items-center space-y-4">

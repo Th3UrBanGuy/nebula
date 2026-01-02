@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../store';
 import { Play, SortAsc, Layers } from 'lucide-react';
@@ -45,7 +46,7 @@ export const Guide: React.FC = () => {
       <div className="w-48 md:w-64 bg-stone-950/80 border-r border-stone-800 p-6 flex flex-col overflow-y-auto custom-scrollbar">
           <h2 className="text-xl font-black text-white mb-6 flex items-center">
               <Layers className="w-5 h-5 mr-2 text-orange-500" />
-              Library
+              All Channels
           </h2>
           <div className="space-y-2">
               {categories.map((cat) => (

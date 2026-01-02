@@ -1,15 +1,24 @@
 import { Channel, User, LicenseKey } from '../types';
 import { Pool } from '@neondatabase/serverless';
 
-// Specific connection string provided for the Nebula OS Conceptual Environment
-const DATABASE_URL = 'postgresql://neondb_owner:npg_ZMlPjxOk63VF@ep-cool-water-adt0eidc-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require';
+// Retrieve the database URL from Vite environment variables
+const DATABASE_URL = import.meta.env.VITE_DATABASE_URL;
 
+if (!DATABASE_URL) {
+    console.error("CRITICAL ERROR: VITE_DATABASE_URL is missing from environment variables.");
+}
+
+// Initialize Neon Serverless Pool
 const pool = new Pool({ connectionString: DATABASE_URL });
 
 // --- INITIALIZATION ---
 
 export const initializeSchema = async (): Promise<{ success: boolean; error?: string }> => {
     try {
+        if (!DATABASE_URL) {
+            return { success: false, error: "Database configuration missing." };
+        }
+
         // Create tables if they don't exist
         const queries = [
             `CREATE TABLE IF NOT EXISTS users (
