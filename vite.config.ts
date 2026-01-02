@@ -4,6 +4,9 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
+  optimizeDeps: {
+    include: ['react', 'react-dom']
+  },
   build: {
     outDir: 'dist',
     sourcemap: false, // Disabled for production security (hides source code structure)

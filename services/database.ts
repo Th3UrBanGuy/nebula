@@ -1,33 +1,25 @@
+
 import { Channel, User, LicenseKey } from '../types';
-import { Pool } from '@neondatabase/serverless';
+import { Pool, neonConfig } from '@neondatabase/serverless';
+import { ConfigManager } from './configManager';
 
-// Retrieve the database URL from Vite environment variables safely
-const getEnv = () => {
-    try {
-        return import.meta.env?.VITE_DATABASE_URL;
-    } catch {
-        return undefined;
-    }
-};
+// Configure Neon to use the browser's native WebSocket
+neonConfig.webSocketConstructor = WebSocket;
 
-const DATABASE_URL = getEnv();
+// Retrieve the database URL using the robust 4-tier system
+const DATABASE_URL = ConfigManager.getDatabaseUrl();
 
 if (!DATABASE_URL) {
-    console.error("CRITICAL ERROR: VITE_DATABASE_URL is missing from environment variables.");
+    console.error("CRITICAL ERROR: Could not resolve DATABASE_URL from any configuration tier.");
 }
 
 // Initialize Neon Serverless Pool
-// We use a conditional initialization to prevent crashing if URL is missing.
-const pool = new Pool({ connectionString: DATABASE_URL || "" });
+const pool = new Pool({ connectionString: DATABASE_URL });
 
 // --- INITIALIZATION ---
 
 export const initializeSchema = async (): Promise<{ success: boolean; error?: string }> => {
     try {
-        if (!DATABASE_URL) {
-            return { success: false, error: "Database configuration missing." };
-        }
-
         // Create tables if they don't exist
         const queries = [
             `CREATE TABLE IF NOT EXISTS users (
@@ -61,7 +53,6 @@ export const initializeSchema = async (): Promise<{ success: boolean; error?: st
                 status TEXT,
                 created_at BIGINT
             )`,
-            // New Settings Table for System Configs (Like Ayna URL)
             `CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
                 value TEXT
@@ -73,13 +64,10 @@ export const initializeSchema = async (): Promise<{ success: boolean; error?: st
         }
 
         // --- MIGRATION FIXES ---
-        // Ensure columns exist if table was created with older schema
         try {
             await pool.query(`ALTER TABLE channels ADD COLUMN IF NOT EXISTS number TEXT`);
             await pool.query(`ALTER TABLE channels ADD COLUMN IF NOT EXISTS stream_url TEXT`);
             await pool.query(`ALTER TABLE channels ADD COLUMN IF NOT EXISTS color TEXT`);
-            
-            // Users table migrations
             await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS license_data JSONB`);
             await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS preferences JSONB`);
             await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS cover_image TEXT`);
@@ -90,7 +78,7 @@ export const initializeSchema = async (): Promise<{ success: boolean; error?: st
             console.log("Migration Note:", migErr);
         }
         
-        console.log("Neon DB: Schema Initialized and Connected.");
+        console.log("Neon DB: Schema Initialized and Connected via ConfigManager.");
         return { success: true };
     } catch (e: any) {
         console.error("Neon DB Init Error:", e);
@@ -139,7 +127,7 @@ export const fetchChannelsFromDB = async (): Promise<Channel[] | null> => {
             logo: row.logo,
             provider: row.provider,
             category: row.category,
-            color: row.color || 'bg-stone-800', // Fallback default color
+            color: row.color || 'bg-stone-800', 
             description: row.description,
             streamUrl: row.stream_url
         }));
@@ -288,7 +276,6 @@ export const registerUserInDB = async (user: User, password: string): Promise<{ 
         return { success: true };
     } catch (err: any) {
         console.error("Register Error:", err);
-        // Postgres unique violation code for email constraint
         if (err.code === '23505') {
             return { success: false, error: "Email address is already registered." };
         }

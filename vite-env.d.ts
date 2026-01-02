@@ -1,8 +1,3 @@
-/**
- * Type definitions for Vite environment variables.
- * Reference to vite/client is removed to avoid resolution errors if the package is missing or misconfigured.
- */
-
 interface ImportMetaEnv {
   readonly VITE_DATABASE_URL: string;
   readonly BASE_URL: string;
@@ -14,4 +9,11 @@ interface ImportMetaEnv {
 
 interface ImportMeta {
   readonly env: ImportMetaEnv;
+}
+
+// Support for Tier 2: Runtime Injection via Window object
+interface Window {
+    __NEBULA_CONFIG__?: {
+        DATABASE_URL?: string;
+    }
 }
