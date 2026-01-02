@@ -1,15 +1,24 @@
 import { Channel, User, LicenseKey } from '../types';
 import { Pool } from '@neondatabase/serverless';
 
-// Retrieve the database URL from Vite environment variables
-const DATABASE_URL = import.meta.env.VITE_DATABASE_URL;
+// Retrieve the database URL from Vite environment variables safely
+const getEnv = () => {
+    try {
+        return import.meta.env?.VITE_DATABASE_URL;
+    } catch {
+        return undefined;
+    }
+};
+
+const DATABASE_URL = getEnv();
 
 if (!DATABASE_URL) {
     console.error("CRITICAL ERROR: VITE_DATABASE_URL is missing from environment variables.");
 }
 
 // Initialize Neon Serverless Pool
-const pool = new Pool({ connectionString: DATABASE_URL });
+// We use a conditional initialization to prevent crashing if URL is missing.
+const pool = new Pool({ connectionString: DATABASE_URL || "" });
 
 // --- INITIALIZATION ---
 

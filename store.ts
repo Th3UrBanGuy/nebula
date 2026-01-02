@@ -1,78 +1,8 @@
 
 import { create } from 'zustand';
-import { AppState, generateMockPrograms, ViewState, User, CHARACTER_AVATARS, COVER_SCENES, License, Channel } from './types';
+import { AppState, generateMockPrograms, ViewState, User, License, Channel } from './types';
+import { CHARACTER_AVATARS, COVER_SCENES, DEFAULT_CHANNELS } from './constants';
 import { fetchChannelsFromDB, addChannelsToDB, deleteChannelFromDB, loginUserFromDB, registerUserInDB, getUserById, updateUserInDB, initializeSchema, createLicenseInDB, fetchAllLicenses, redeemLicenseKey, getSetting, saveSetting } from './services/database';
-
-// Updated MOCK_CHANNELS with REAL WORKING PUBLIC STREAMS for demonstration
-// Using reliable CDN test streams (Mux, Akamai) to ensure playback stability in prototype mode
-const WORKING_CHANNELS = [
-  { 
-    id: 'nasa', 
-    number: '101', 
-    name: 'NASA TV', 
-    provider: 'Government', 
-    category: 'Science', 
-    color: 'bg-gradient-to-br from-blue-600 to-indigo-600', 
-    logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e5/NASA_logo.svg/1200px-NASA_logo.svg.png', 
-    description: 'Live coverage of missions and space exploration.',
-    streamUrl: 'https://ntv1.akamaized.net/hls/live/2014075/NASA-TV-Public/master.m3u8'
-  },
-  { 
-    id: 'action_sports', 
-    number: '102', 
-    name: 'Action Sports', 
-    provider: 'Red Bull', 
-    category: 'Sports', 
-    color: 'bg-gradient-to-br from-red-700 to-yellow-500', 
-    logo: 'https://upload.wikimedia.org/wikipedia/en/thumb/f/f5/Red_Bull_TV_logo.svg/1200px-Red_Bull_TV_logo.svg.png', 
-    description: 'Extreme sports, music, and lifestyle entertainment.',
-    streamUrl: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8' 
-  },
-  { 
-    id: 'aljazeera', 
-    number: '103', 
-    name: 'News 24', 
-    provider: 'Global News', 
-    category: 'News', 
-    color: 'bg-gradient-to-br from-orange-500 to-amber-600', 
-    logo: 'https://upload.wikimedia.org/wikipedia/en/thumb/f/f2/Aljazeera_eng.svg/1200px-Aljazeera_eng.svg.png', 
-    description: 'Breaking news and in-depth analysis from around the world.',
-    streamUrl: 'https://cph-p2p-msl.akamaized.net/hls/live/2000341/test/master.m3u8'
-  },
-  { 
-    id: 'cinema_one', 
-    number: '104', 
-    name: 'Cinema One', 
-    provider: 'Nebula Movies', 
-    category: 'Movies', 
-    color: 'bg-gradient-to-br from-blue-500 to-cyan-500', 
-    logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/26/Deutsche_Welle_Logo_2012.svg/1200px-Deutsche_Welle_Logo_2012.svg.png', 
-    description: 'Classic cinema and independent films.',
-    streamUrl: 'https://test-streams.mux.dev/tos_isf/playlist.m3u8'
-  },
-  { 
-    id: 'fantasy_tv', 
-    number: '105', 
-    name: 'Fantasy TV', 
-    provider: 'Rakuten', 
-    category: 'Entertainment', 
-    color: 'bg-gradient-to-br from-purple-600 to-pink-600', 
-    logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/25/Rakuten_TV_logo.svg/2560px-Rakuten_TV_logo.svg.png', 
-    description: 'Dragons, dungeons, and epic tales.',
-    streamUrl: 'https://bitdash-a.akamaihd.net/content/sintel/hls/playlist.m3u8'
-  },
-   { 
-    id: 'tech_talk', 
-    number: '106', 
-    name: 'Tech Talk', 
-    provider: 'TED Talks', 
-    category: 'Education', 
-    color: 'bg-gradient-to-br from-red-600 to-red-500', 
-    logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/aa/TED_three_letter_logo.svg/1200px-TED_three_letter_logo.svg.png', 
-    description: 'Ideas worth spreading and future tech.',
-    streamUrl: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8'
-  }
-];
 
 export const useStore = create<AppState>((set, get) => ({
   user: null, // Start unauthenticated
@@ -284,8 +214,8 @@ export const useStore = create<AppState>((set, get) => ({
     let dbChannels = await fetchChannelsFromDB();
     if (!dbChannels || dbChannels.length === 0) {
       console.log("System: Proto DB empty. Seeding default channels.");
-      dbChannels = WORKING_CHANNELS;
-      await addChannelsToDB(WORKING_CHANNELS);
+      dbChannels = DEFAULT_CHANNELS;
+      await addChannelsToDB(DEFAULT_CHANNELS);
     }
 
     // 3. Auto Fetch Ayna Content (Dynamic Channels)

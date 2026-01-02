@@ -6,5 +6,5 @@ interface Config {
 }
 
 export const CONFIG: Config = {
-  APP_MODE: 'PROTOTYPE_LOCAL',
+  APP_MODE: 'Produ',
 };

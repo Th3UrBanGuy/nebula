@@ -1,8 +1,8 @@
 
 import React, { useState } from 'react';
 import { useStore } from '../store';
-import { User, Shield, Camera, Edit2, Save, X, Mail, Fingerprint, LogOut, Check, Image as ImageIcon, Key } from 'lucide-react';
-import { CHARACTER_AVATARS, COVER_SCENES } from '../types';
+import { Shield, Camera, Edit2, Save, X, Mail, Fingerprint, LogOut, Check, Image as ImageIcon, Key } from 'lucide-react';
+import { CHARACTER_AVATARS, COVER_SCENES } from '../constants';
 import { format } from 'date-fns';
 
 export const Profile: React.FC = () => {
