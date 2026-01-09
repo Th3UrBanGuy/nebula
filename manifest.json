@@ -1,0 +1,35 @@
+
+{
+  "name": "Nebula Live OS",
+  "short_name": "Nebula",
+  "description": "A fully immersive Live TV Operating System for the web.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0c0a09",
+  "theme_color": "#ea580c",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "https://img.freepik.com/free-photo/view-3d-man-wearing-goggles_23-2150709489.jpg?w=192",
+      "sizes": "192x192",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://img.freepik.com/free-photo/view-3d-man-wearing-goggles_23-2150709489.jpg?w=512",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any"
+    }
+  ],
+  "categories": ["entertainment", "utilities", "video"],
+  "screenshots": [
+    {
+      "src": "https://images.unsplash.com/photo-1600607686527-6fb886090705?q=80&w=1280&auto=format&fit=crop",
+      "sizes": "1280x720",
+      "type": "image/jpeg",
+      "form_factor": "wide",
+      "label": "Nebula OS Home"
+    }
+  ]
+}

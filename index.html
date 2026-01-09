@@ -3,36 +3,74 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    
+    <!-- PWA Primary Meta -->
     <title>Nebula Live OS</title>
+    <meta name="description" content="Next-generation web-based Live TV Operating System." />
+    <meta name="theme-color" content="#0c0a09" />
+    <link rel="manifest" href="manifest.json" />
+
+    <!-- iOS Home Screen Support -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Nebula" />
+    <link rel="apple-touch-icon" href="https://img.freepik.com/free-photo/view-3d-man-wearing-goggles_23-2150709489.jpg?w=180" />
+
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
     <style>
-      /* Custom Scrollbar for the OS feel - Warm Theme */
+      :root {
+        --safe-top: env(safe-area-inset-top);
+        --safe-bottom: env(safe-area-inset-bottom);
+        --safe-left: env(safe-area-inset-left);
+        --safe-right: env(safe-area-inset-right);
+      }
+      
       ::-webkit-scrollbar {
         width: 4px;
         height: 4px;
       }
       ::-webkit-scrollbar-track {
-        background: #1c1917; /* stone-900 */
+        background: #1c1917;
       }
       ::-webkit-scrollbar-thumb {
-        background: #44403c; /* stone-700 */
+        background: #44403c;
         border-radius: 3px;
       }
       ::-webkit-scrollbar-thumb:hover {
-        background: #ea580c; /* orange-600 */
+        background: #ea580c;
       }
       body {
-        background-color: #0c0a09; /* stone-950 */
+        background-color: #0c0a09;
         color: #fafaf9;
-        overflow: hidden; /* Prevent body scroll, handle inside app */
+        overflow: hidden;
         -webkit-tap-highlight-color: transparent;
+        padding-top: var(--safe-top);
+        padding-bottom: var(--safe-bottom);
+        padding-left: var(--safe-left);
+        padding-right: var(--safe-right);
       }
-      /* Override VideoJS default font and icons if needed, but keeping default is fine */
       .video-js {
         width: 100%;
         height: 100%;
+      }
+      .pt-safe { padding-top: var(--safe-top); }
+      .pb-safe { padding-bottom: var(--safe-bottom); }
+      
+      /* Mobile Gesture Feedback Animations */
+      @keyframes ripple {
+        0% { transform: scale(0.8); opacity: 0.5; }
+        100% { transform: scale(2); opacity: 0; }
+      }
+      .tap-ripple {
+        position: absolute;
+        width: 100px;
+        height: 100px;
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 50%;
+        pointer-events: none;
+        animation: ripple 0.5s ease-out;
       }
     </style>
 <script type="importmap">
