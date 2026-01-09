@@ -55,13 +55,13 @@ export const Assistant: React.FC = () => {
   const quickTags = ['Sports', 'News', 'Movies', 'Music', 'Kids', 'Docu'];
 
   return (
-    <div className="w-full h-full flex items-center justify-center p-0 md:p-12 relative z-30">
+    <div className="w-full h-full flex items-center justify-center p-0 md:p-12 relative z-30 pt-safe-top">
       
-      {/* Container: Full height/width on mobile, Card on desktop */}
+      {/* Container */}
       <div className="w-full md:max-w-3xl bg-stone-950 md:bg-stone-900/60 backdrop-blur-2xl rounded-none md:rounded-[2.5rem] border-x-0 md:border border-stone-800 overflow-hidden shadow-none md:shadow-2xl flex flex-col h-full md:h-[75vh] transition-all">
         
         {/* Header */}
-        <div className="p-6 md:p-10 border-b border-stone-800 bg-gradient-to-r from-stone-900 via-stone-900 to-stone-900/50 flex items-center space-x-4 md:space-x-6 shrink-0 pt-safe-top">
+        <div className="p-6 md:p-10 border-b border-stone-800 bg-gradient-to-r from-stone-900 via-stone-900 to-stone-900/50 flex items-center space-x-4 md:space-x-6 shrink-0">
            <div className="w-12 h-12 md:w-20 md:h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl md:rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/20 md:rotate-3 shrink-0">
               <Search className="w-6 h-6 md:w-10 md:h-10 text-white" />
            </div>
@@ -91,7 +91,7 @@ export const Assistant: React.FC = () => {
                         <button 
                             key={tag} 
                             onClick={() => {setQuery(tag); performSearch(tag);}} 
-                            className="px-4 py-2 rounded-lg md:rounded-xl bg-stone-900 hover:bg-stone-800 border border-stone-800 text-xs md:text-sm font-bold transition-colors text-stone-400 hover:text-white active:scale-95"
+                            className="px-4 py-2 rounded-lg md:rounded-xl bg-stone-900 hover:bg-stone-800 border border-stone-800 text-sm font-bold transition-colors text-stone-400 hover:text-white active:scale-95"
                         >
                             {tag}
                         </button>
@@ -140,8 +140,8 @@ export const Assistant: React.FC = () => {
                             </h3>
                             <p className="text-xs md:text-sm text-stone-500 truncate">{channel.description}</p>
                         </div>
-                        <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-stone-800 group-hover:bg-white flex items-center justify-center transition-colors shrink-0 ml-2">
-                            <Play className="w-3 h-3 md:w-4 md:h-4 text-white group-hover:text-black fill-current ml-0.5" />
+                        <div className="w-10 h-10 md:w-10 md:h-10 rounded-full bg-stone-800 group-hover:bg-white flex items-center justify-center transition-colors shrink-0 ml-2">
+                            <Play className="w-4 h-4 text-white group-hover:text-black fill-current ml-0.5" />
                         </div>
                     </div>
                 ))}
@@ -151,14 +151,14 @@ export const Assistant: React.FC = () => {
         </div>
 
         {/* Input Area */}
-        <form onSubmit={handleSearch} className="p-4 md:p-8 bg-stone-950/80 backdrop-blur-xl border-t border-stone-800 shrink-0 pb-safe md:pb-8 sticky bottom-0 z-20">
+        <form onSubmit={handleSearch} className="p-4 md:p-8 bg-stone-950/80 backdrop-blur-xl border-t border-stone-800 shrink-0 pb-safe-bottom md:pb-8 sticky bottom-0 z-20">
            <div className="relative group">
              <input
                type="text"
                value={query}
                onChange={handleInputChange}
                placeholder="Search channels..."
-               className="w-full bg-stone-900 text-white pl-5 pr-12 py-3.5 md:py-5 rounded-xl md:rounded-2xl border border-stone-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-stone-600 font-bold text-sm md:text-lg shadow-inner"
+               className="w-full bg-stone-900 text-white pl-5 pr-12 py-3.5 md:py-5 rounded-xl md:rounded-2xl border border-stone-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-stone-600 font-bold text-base md:text-lg shadow-inner"
                autoFocus
              />
              
@@ -182,3 +182,4 @@ export const Assistant: React.FC = () => {
     </div>
   );
 };
+    

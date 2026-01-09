@@ -17,6 +17,32 @@ const App: React.FC = () => {
   const { view, initialize, isLoading, user, activeChannelId } = useStore();
   const [showSplash, setShowSplash] = useState(true);
 
+  // --- FULLSCREEN ENFORCER ---
+  // Requests fullscreen on the first interaction to hide OS status bars (Battery, Time, etc.)
+  useEffect(() => {
+    const handleInteraction = () => {
+        const doc = window.document;
+        const docEl = doc.documentElement;
+
+        const requestFullScreen = docEl.requestFullscreen || (docEl as any).mozRequestFullScreen || (docEl as any).webkitRequestFullscreen || (docEl as any).msRequestFullscreen;
+        
+        if (!doc.fullscreenElement && requestFullScreen) {
+            requestFullScreen.call(docEl).catch((e: any) => {
+                // Silent catch, user might have denied or browser blocked
+            });
+        }
+    };
+
+    // Attach to common interaction events
+    window.addEventListener('click', handleInteraction, { once: true });
+    window.addEventListener('touchstart', handleInteraction, { once: true });
+
+    return () => {
+        window.removeEventListener('click', handleInteraction);
+        window.removeEventListener('touchstart', handleInteraction);
+    };
+  }, []);
+
   useEffect(() => {
     initialize();
     const timer = setTimeout(() => setShowSplash(false), 2000); 
@@ -47,7 +73,7 @@ const App: React.FC = () => {
   const isDistractionFree = view === 'player';
 
   return (
-    <div className="h-screen w-screen bg-stone-950 text-stone-100 flex flex-col overflow-hidden font-sans selection:bg-orange-500/30 relative">
+    <div className="h-[100dvh] w-screen bg-stone-950 text-stone-100 flex flex-col overflow-hidden font-sans selection:bg-orange-500/30 relative">
       
       {/* IMMERSIVE BACKGROUND LAYER */}
       <div className="absolute inset-0 z-0">
@@ -65,7 +91,7 @@ const App: React.FC = () => {
       <div className="flex-1 flex flex-col relative z-10 h-full">
         {!isDistractionFree && <TopBar />}
         
-        <main className={`flex-1 overflow-hidden relative ${isDistractionFree ? 'p-0' : 'p-4 md:p-8 pb-32'}`}>
+        <main className={`flex-1 overflow-hidden relative ${isDistractionFree ? 'p-0' : 'p-0 md:p-8'}`}>
           
           {/* Views Layering - Centered Container for TV Feel */}
           <div className="w-full h-full max-w-[1600px] mx-auto relative">
@@ -96,7 +122,7 @@ const App: React.FC = () => {
               ? 'inset-0 z-50 rounded-none' 
               : `
                  z-40 rounded-xl border border-stone-700/50 cursor-pointer group hover:scale-105 hover:shadow-[0_0_40px_rgba(234,88,12,0.3)] hover:border-orange-500/50
-                 bottom-24 right-4 w-36 h-20 md:bottom-32 md:right-8 md:w-80 md:h-44
+                 bottom-28 right-4 w-32 h-18 md:bottom-32 md:right-8 md:w-80 md:h-44
                  ${(isPlayerHidden || !activeChannelId) ? 'opacity-0 pointer-events-none translate-y-10 scale-90' : 'opacity-100'}
                 `
             }

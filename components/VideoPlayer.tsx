@@ -4,9 +4,11 @@ import { useStore } from '../store';
 import videojs from 'video.js';
 import { 
   Maximize2, Minimize2, Volume2, VolumeX, Pause, Play, 
-  Settings, AlertTriangle, Loader2, RefreshCw, Radio, 
-  Signal, Activity, SkipBack, SkipForward, Headphones, Tv,
-  ChevronLeft, Lock, Unlock, RotateCcw, FastForward
+  Settings, AlertTriangle, Loader2, Signal, Activity, 
+  SkipBack, SkipForward, Headphones, ChevronLeft, 
+  Lock, Unlock, RotateCcw, FastForward, Sun, Smartphone,
+  Monitor, MoveDiagonal, Music, Film, Sliders, Clock,
+  Gauge, X, Cast, Minimize, Layers
 } from 'lucide-react';
 
 interface VideoPlayerProps {
@@ -14,119 +16,103 @@ interface VideoPlayerProps {
 }
 
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
-  const { activeChannelId, channels, isPlaying, volume, togglePlay, setView } = useStore();
+  const { activeChannelId, channels, isPlaying, volume: storeVolume, togglePlay: toggleStorePlay, setView } = useStore();
+  
+  // Refs
   const videoContainerRef = useRef<HTMLDivElement>(null);
-  const playerRef = useRef<any>(null); 
+  const playerRef = useRef<any>(null);
   const controlsTimeoutRef = useRef<number | null>(null);
-  const touchStartPos = useRef<{ x: number, y: number } | null>(null);
-  const lastTapTime = useRef<number>(0);
+  const progressBarRef = useRef<HTMLDivElement>(null);
+  const touchStartRef = useRef<{ x: number, y: number, time: number } | null>(null);
+  const touchLastMoveRef = useRef<{ x: number, y: number } | null>(null);
+  const isDraggingRef = useRef(false);
+  const lastTapTimeRef = useRef(0);
 
+  // Core State
+  const [localVolume, setLocalVolume] = useState(storeVolume);
+  const [brightness, setBrightness] = useState(100); 
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [isBuffering, setIsBuffering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showControls, setShowControls] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [buffering, setBuffering] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
+  const [aspectRatio, setAspectRatio] = useState<'contain' | 'cover' | 'fill'>('contain');
   const [mediaType, setMediaType] = useState<'video' | 'audio' | 'stream'>('video');
-  const [seekFeedback, setSeekFeedback] = useState<{ direction: 'left' | 'right', active: boolean }>({ direction: 'left', active: false });
+  const [gestureFeedback, setGestureFeedback] = useState<{ type: 'volume' | 'brightness' | 'seek', value: string | number, icon?: any } | null>(null);
+
+  // Advanced Player State
+  const [showSettings, setShowSettings] = useState(false);
+  const [playbackRate, setPlaybackRate] = useState(1.0);
+  const [quality, setQuality] = useState('Auto');
+  const [sleepTimer, setSleepTimer] = useState<number | null>(null); // minutes
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Scrubbing
+  const [scrubInfo, setScrubInfo] = useState<{ time: number; x: number; isVisible: boolean }>({ time: 0, x: 0, isVisible: false });
 
   const channel = useMemo(() => channels.find(c => c.id === activeChannelId), [channels, activeChannelId]);
 
+  // --- 1. ENGINE INITIALIZATION ---
   const detectFormat = useCallback((url: string) => {
     if (!url) return 'video';
-    const ext = url.split(/[#?]/)[0].split('.').pop()?.toLowerCase();
+    const cleanUrl = url.split(/[#?]/)[0].toLowerCase();
+    const ext = cleanUrl.split('.').pop();
+    
     if (ext === 'm3u8') return 'stream';
-    if (['mp3', 'wav', 'ogg', 'aac'].includes(ext || '')) return 'audio';
+    if (['mp3', 'wav', 'ogg', 'aac', 'm4a'].includes(ext || '')) return 'audio';
     return 'video';
   }, []);
 
   useEffect(() => {
-    if (channel?.streamUrl) {
-      setMediaType(detectFormat(channel.streamUrl));
-    }
-  }, [channel, detectFormat]);
-
-  const showControlsTemporarily = () => {
-    if (isLocked && !isMini) return;
-    setShowControls(true);
-    if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
-    controlsTimeoutRef.current = window.setTimeout(() => setShowControls(false), 3500);
-  };
-
-  const handleTouchStart = (e: React.TouchEvent) => {
-    const touch = e.touches[0];
-    touchStartPos.current = { x: touch.clientX, y: touch.clientY };
-    
-    // Double Tap Detection for Seeking
-    const now = Date.now();
-    const delay = now - lastTapTime.current;
-    if (delay < 300 && !isMini && !isLocked) {
-      const width = window.innerWidth;
-      const x = touch.clientX;
-      if (x < width * 0.3) {
-        handleSeek(-10);
-        setSeekFeedback({ direction: 'left', active: true });
-      } else if (x > width * 0.7) {
-        handleSeek(10);
-        setSeekFeedback({ direction: 'right', active: true });
-      }
-      setTimeout(() => setSeekFeedback({ direction: 'left', active: false }), 500);
-    }
-    lastTapTime.current = now;
-  };
-
-  const handleSeek = (seconds: number) => {
-    const player = playerRef.current;
-    if (player && !player.isDisposed()) {
-        const currentTime = player.currentTime();
-        player.currentTime(currentTime + seconds);
-    }
-  };
-
-  const toggleFullscreen = () => {
-    if (!document.fullscreenElement) {
-      videoContainerRef.current?.parentElement?.requestFullscreen().catch(() => {});
-    } else {
-      document.exitFullscreen();
-    }
-  };
-
-  useEffect(() => {
-    if (!channel || !channel.streamUrl || !videoContainerRef.current) return;
-
-    setIsLoading(true);
-    setError(null);
+    if (!channel || !videoContainerRef.current) return;
 
     if (playerRef.current) {
       playerRef.current.dispose();
       playerRef.current = null;
     }
 
+    const type = detectFormat(channel.streamUrl || '');
+    setMediaType(type);
+    setError(null);
+    setIsBuffering(true);
+
     const videoElement = document.createElement("video-js");
-    videoElement.classList.add('vjs-nebula-theme', 'vjs-fill');
+    videoElement.classList.add('vjs-nebula-engine');
+    // Critical for custom UI on iOS
     videoElement.setAttribute('crossorigin', 'anonymous');
     videoElement.setAttribute('playsinline', 'true');
+    videoElement.setAttribute('webkit-playsinline', 'true');
+    
+    // Clear previous elements
+    while (videoContainerRef.current.firstChild) {
+      videoContainerRef.current.removeChild(videoContainerRef.current.firstChild);
+    }
     videoContainerRef.current.appendChild(videoElement);
 
-    const type = detectFormat(channel.streamUrl);
-    const mimeType = type === 'stream' ? 'application/x-mpegURL' : (type === 'audio' ? `audio/${channel.streamUrl.split('.').pop()}` : 'video/mp4');
+    const mimeType = type === 'stream' ? 'application/x-mpegURL' : (type === 'audio' ? `audio/${channel.streamUrl?.split('.').pop()}` : 'video/mp4');
 
-    const options = {
+    const player = playerRef.current = videojs(videoElement, {
       autoplay: isPlaying,
-      controls: false,
+      controls: false, // Totally custom controls
       responsive: true,
-      fluid: true,
-      preload: 'auto',
-      sources: [{ src: channel.streamUrl, type: mimeType }],
-      html5: { vhs: { overrideNative: !videojs.browser.IS_SAFARI } }
-    };
+      fluid: false, // We handle layout manually for "Center in Middle"
+      fill: true,   // Fill container
+      html5: { vhs: { overrideNative: !videojs.browser.IS_SAFARI } },
+      sources: [{ src: channel.streamUrl, type: mimeType }]
+    });
 
-    const player = playerRef.current = videojs(videoElement, options);
-
-    player.on('waiting', () => setBuffering(true));
-    player.on('playing', () => { setBuffering(false); setIsLoading(false); });
+    player.on('waiting', () => setIsBuffering(true));
+    player.on('canplay', () => setIsBuffering(false));
+    player.on('playing', () => setIsBuffering(false));
+    player.on('timeupdate', () => {
+        if (!playerRef.current) return;
+        setCurrentTime(playerRef.current.currentTime());
+        setDuration(playerRef.current.duration() || 0);
+    });
     player.on('error', () => {
-      setError("Signal link severed.");
-      setIsLoading(false);
+        setError("Signal Lost");
+        setIsBuffering(false);
     });
 
     return () => {
@@ -137,124 +123,473 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
   useEffect(() => {
     const player = playerRef.current;
     if (player && !player.isDisposed()) {
-      if (isPlaying) player.play()?.catch(() => {});
-      else player.pause();
+        if (isPlaying) player.play()?.catch(() => {});
+        else player.pause();
     }
   }, [isPlaying]);
+
+  // --- 2. ADVANCED FEATURES ---
+
+  const toggleFullscreen = useCallback(() => {
+      if (!videoContainerRef.current) return;
+      if (!document.fullscreenElement) {
+          videoContainerRef.current.requestFullscreen().catch(e => console.error(e));
+          setIsFullscreen(true);
+      } else {
+          document.exitFullscreen();
+          setIsFullscreen(false);
+      }
+  }, []);
+
+  const togglePiP = useCallback(() => {
+      const vid = videoContainerRef.current?.querySelector('video');
+      if (vid && document.pictureInPictureEnabled) {
+          if (document.pictureInPictureElement) document.exitPictureInPicture();
+          else vid.requestPictureInPicture();
+      }
+  }, []);
+
+  const handleSpeedChange = (speed: number) => {
+      setPlaybackRate(speed);
+      if (playerRef.current) playerRef.current.playbackRate(speed);
+  };
+
+  // Sleep Timer Logic
+  useEffect(() => {
+      if (!sleepTimer) return;
+      const timer = setTimeout(() => {
+          if (isPlaying) toggleStorePlay();
+          setSleepTimer(null);
+          // Optional: Show "Sleeping" UI
+      }, sleepTimer * 60 * 1000);
+      return () => clearTimeout(timer);
+  }, [sleepTimer, isPlaying]);
+
+  // --- 3. GESTURE & INTERACTION ---
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (isLocked || showSettings) return;
+    const touch = e.touches[0];
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
+    touchLastMoveRef.current = { x: touch.clientX, y: touch.clientY };
+    isDraggingRef.current = false;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (isLocked || showSettings || !touchStartRef.current || !touchLastMoveRef.current) return;
+    
+    const touch = e.touches[0];
+    const deltaY = touchLastMoveRef.current.y - touch.clientY;
+    const deltaX = touch.clientX - touchLastMoveRef.current.x;
+
+    if (Math.abs(deltaY) > 5 || Math.abs(deltaX) > 5) {
+        isDraggingRef.current = true;
+    }
+
+    if (isDraggingRef.current) {
+        const screenWidth = window.innerWidth;
+        const sensitivity = 0.5;
+
+        if (touchStartRef.current.x > screenWidth / 2) {
+            // Volume (Right)
+            let newVol = localVolume + (deltaY * sensitivity);
+            newVol = Math.max(0, Math.min(100, newVol));
+            setLocalVolume(newVol);
+            if (playerRef.current) playerRef.current.volume(newVol / 100);
+            setGestureFeedback({ type: 'volume', value: Math.round(newVol), icon: newVol === 0 ? VolumeX : Volume2 });
+        } else {
+            // Brightness (Left)
+            let newBright = brightness + (deltaY * sensitivity);
+            newBright = Math.max(10, Math.min(100, newBright)); 
+            setBrightness(newBright);
+            setGestureFeedback({ type: 'brightness', value: Math.round(newBright), icon: Sun });
+        }
+    }
+
+    touchLastMoveRef.current = { x: touch.clientX, y: touch.clientY };
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (isLocked || showSettings) return;
+    setGestureFeedback(null); 
+
+    if (!isDraggingRef.current && touchStartRef.current) {
+        const now = Date.now();
+        const timeDiff = now - lastTapTimeRef.current;
+        const touchX = touchStartRef.current.x;
+        const screenWidth = window.innerWidth;
+
+        if (timeDiff < 300) {
+             // Double Tap
+             if (touchX < screenWidth * 0.3) {
+                 handleSeek(-10);
+                 setGestureFeedback({ type: 'seek', value: '-10s', icon: RotateCcw });
+             } else if (touchX > screenWidth * 0.7) {
+                 handleSeek(10);
+                 setGestureFeedback({ type: 'seek', value: '+10s', icon: FastForward });
+             } else {
+                 toggleStorePlay();
+             }
+             setTimeout(() => setGestureFeedback(null), 600);
+        } else {
+             // Single Tap
+             if (!isMini) toggleControls();
+             else setView('player');
+        }
+        lastTapTimeRef.current = now;
+    }
+    touchStartRef.current = null;
+    isDraggingRef.current = false;
+  };
+
+  const handleSeek = (seconds: number) => {
+      if (playerRef.current) {
+          const newTime = playerRef.current.currentTime() + seconds;
+          playerRef.current.currentTime(newTime);
+      }
+  };
+
+  const toggleControls = () => {
+      setShowControls(prev => {
+          if (!prev) {
+              if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+              controlsTimeoutRef.current = window.setTimeout(() => setShowControls(false), 4000);
+          }
+          return !prev;
+      });
+  };
+
+  // --- 4. RENDER ---
 
   if (!channel) return null;
 
   return (
     <div 
-      onMouseMove={showControlsTemporarily}
+      className={`relative w-full h-full bg-black overflow-hidden select-none touch-none ${isMini ? 'cursor-pointer' : ''}`}
       onTouchStart={handleTouchStart}
-      className={`relative w-full h-full bg-stone-950 overflow-hidden group select-none ${isMini ? 'cursor-pointer' : ''}`}
-      onClick={() => {
-          if (isMini) { setView('player'); }
-          else { showControlsTemporarily(); }
-      }}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onMouseMove={() => !isMini && !showControls && toggleControls()} 
+      onClick={() => isMini && setView('player')}
+      ref={videoContainerRef}
     >
-      {/* MEDIA CONTENT */}
-      <div className={`relative z-10 w-full h-full flex items-center justify-center ${mediaType === 'audio' ? 'bg-stone-900' : ''}`}>
+      
+      {/* Simulated Brightness Overlay */}
+      <div 
+        className="absolute inset-0 z-50 pointer-events-none bg-black transition-opacity duration-75"
+        style={{ opacity: 1 - (brightness / 100) }}
+      />
+
+      {/* --- RENDER ENGINE: CENTERED MIDDLE --- */}
+      {/* We use flex-col items-center justify-center to force content to the middle of the screen */}
+      <div className={`absolute inset-0 w-full h-full flex flex-col items-center justify-center bg-black transition-all duration-500`}>
           {mediaType === 'audio' ? (
-              <div className="flex flex-col items-center p-8 text-center animate-fade-in">
-                  <div className="w-48 h-48 md:w-64 md:h-64 rounded-[3rem] bg-gradient-to-br from-stone-800 to-stone-900 border border-stone-700 shadow-2xl flex items-center justify-center mb-8">
-                      {channel.logo.startsWith('http') ? <img src={channel.logo} className="w-1/2 h-1/2 object-contain" /> : <Headphones className="w-16 h-16 text-stone-700" />}
+              <div className="flex flex-col items-center justify-center w-full h-full bg-gradient-to-b from-stone-900 to-black z-0">
+                  {/* Visualizer */}
+                  <div className={`w-48 h-48 md:w-64 md:h-64 rounded-full border-4 border-stone-800 shadow-[0_0_50px_rgba(234,88,12,0.2)] overflow-hidden ${isPlaying ? 'animate-[spin_10s_linear_infinite]' : ''}`}>
+                      {channel.logo.startsWith('http') ? (
+                          <img src={channel.logo} className="w-full h-full object-cover" />
+                      ) : (
+                          <div className="w-full h-full bg-stone-800 flex items-center justify-center">
+                              <Music className="w-20 h-20 text-stone-600" />
+                          </div>
+                      )}
                   </div>
-                  <h3 className="text-2xl md:text-4xl font-black text-white">{channel.name}</h3>
+                  <div className="mt-8 flex items-center space-x-1 h-8 items-end">
+                       {[...Array(5)].map((_, i) => (
+                           <div key={i} className={`w-1 bg-orange-500 rounded-t-full transition-all duration-300 ${isPlaying ? 'animate-pulse' : 'h-2'}`} style={{ height: isPlaying ? `${Math.random() * 32}px` : '4px', animationDelay: `${i * 0.1}s` }} />
+                       ))}
+                  </div>
               </div>
           ) : (
-              <div data-vjs-player className="w-full h-full">
-                  <div ref={videoContainerRef} className="w-full h-full" />
+              /* Video Container - Centered */
+              <div 
+                data-vjs-player 
+                className={`transition-all duration-300 pointer-events-none
+                    ${aspectRatio === 'cover' ? 'w-full h-full object-cover' : 
+                      aspectRatio === 'fill' ? 'w-full h-full' : 
+                      'w-full h-auto max-h-full aspect-video'} 
+                `}
+              >
+                  {/* The actual video element is injected here by useEffect */}
               </div>
           )}
       </div>
 
-      {/* MOBILE GESTURE FEEDBACK */}
-      {seekFeedback.active && (
-          <div className={`absolute inset-0 z-30 flex items-center ${seekFeedback.direction === 'left' ? 'justify-start pl-12' : 'justify-end pr-12'} pointer-events-none`}>
-              <div className="flex flex-col items-center bg-black/40 backdrop-blur-md p-6 rounded-full animate-bounce">
-                  {seekFeedback.direction === 'left' ? <RotateCcw className="w-8 h-8 text-white" /> : <FastForward className="w-8 h-8 text-white" />}
-                  <span className="text-white text-xs font-black mt-2">10s</span>
+      {/* Gesture Feedback Bubble */}
+      {gestureFeedback && (
+          <div className="absolute inset-0 z-40 flex items-center justify-center pointer-events-none">
+              <div className="bg-stone-900/80 backdrop-blur-md p-6 rounded-3xl flex flex-col items-center animate-fade-in-up border border-stone-700">
+                  {gestureFeedback.icon && <gestureFeedback.icon className="w-10 h-10 text-orange-500 mb-2" />}
+                  <span className="text-2xl font-black text-white">{gestureFeedback.value}{gestureFeedback.type === 'seek' ? '' : '%'}</span>
               </div>
           </div>
       )}
 
-      {/* MOBILE FULL PLAYER UI */}
-      {!isMini && (
-          <div className={`absolute inset-0 z-40 flex flex-col justify-between transition-opacity duration-300 ${showControls || !isPlaying ? 'opacity-100' : 'opacity-0'}`}>
+      {/* Loading / Error States */}
+      {((isBuffering && !error) || error) && (
+          <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/40 backdrop-blur-sm pointer-events-none">
+              {error ? (
+                  <div className="flex flex-col items-center text-red-500 bg-stone-900/90 p-6 rounded-2xl border border-red-500/20">
+                      <AlertTriangle className="w-10 h-10 mb-2" />
+                      <span className="font-bold uppercase tracking-widest text-xs">{error}</span>
+                  </div>
+              ) : (
+                  <Loader2 className="w-12 h-12 text-orange-500 animate-spin" />
+              )}
+          </div>
+      )}
+
+      {/* --- CONTROLS OVERLAY --- */}
+      {!isMini && !showSettings && (
+          <div className={`absolute inset-0 z-40 flex flex-col justify-between transition-opacity duration-300 ${showControls || !isPlaying || isLocked ? 'opacity-100' : 'opacity-0'}`}>
               
-              {/* Top Mobile Bar */}
-              <div className="px-6 py-8 md:p-12 flex justify-between items-center bg-gradient-to-b from-black/80 to-transparent">
-                  <div className="flex items-center space-x-4">
-                      <button onClick={() => setView('home')} className="p-3 bg-white/10 rounded-full border border-white/10 active:scale-90 transition-transform">
+              {/* TOP BAR */}
+              <div className={`p-4 md:p-8 flex justify-between items-start bg-gradient-to-b from-black/90 to-transparent transition-transform duration-300 ${isLocked ? '-translate-y-full' : 'translate-y-0'}`}>
+                  <div className="flex items-center space-x-4 pointer-events-auto">
+                      <button onClick={() => setView('home')} className="w-10 h-10 bg-white/10 backdrop-blur-md rounded-full flex items-center justify-center hover:bg-white/20 active:scale-95 transition-all">
                           <ChevronLeft className="w-6 h-6 text-white" />
                       </button>
-                      <div className="flex flex-col">
-                          <h2 className="text-lg font-black text-white leading-none">{channel.name}</h2>
-                          <span className="text-[10px] text-orange-500 font-bold uppercase tracking-widest">{channel.category}</span>
+                      <div className="max-w-[150px] md:max-w-md">
+                          <h2 className="text-white font-black text-lg leading-none shadow-black drop-shadow-md truncate">{channel.name}</h2>
+                          <div className="flex items-center space-x-2 mt-1">
+                              {mediaType === 'stream' && <span className="bg-red-600 px-1.5 py-0.5 rounded text-[9px] font-bold text-white flex items-center"><Activity className="w-3 h-3 mr-1" /> LIVE</span>}
+                              <span className="text-[10px] text-stone-400 font-medium uppercase tracking-wider">{channel.provider}</span>
+                          </div>
                       </div>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <button 
-                        onClick={(e) => { e.stopPropagation(); setIsLocked(!isLocked); }}
-                        className={`p-3 rounded-full border border-white/10 active:scale-90 transition-transform ${isLocked ? 'bg-orange-600' : 'bg-white/10'}`}
-                    >
-                        {isLocked ? <Lock className="w-5 h-5 text-white" /> : <Unlock className="w-5 h-5 text-white" />}
-                    </button>
+
+                  <div className="flex items-center space-x-3 pointer-events-auto">
+                      <button onClick={togglePiP} className="p-2 text-stone-300 hover:text-white bg-black/30 rounded-full backdrop-blur-sm hidden md:block">
+                          <Minimize className="w-5 h-5" />
+                      </button>
+                      <button onClick={() => setShowSettings(true)} className="p-2 text-white bg-black/30 rounded-full backdrop-blur-sm hover:bg-orange-500 hover:text-white transition-colors">
+                          <Settings className="w-5 h-5" />
+                      </button>
                   </div>
               </div>
 
-              {/* Centered Controls for Mobile */}
-              {!isLocked && (
-                <div className="flex items-center justify-center space-x-8 md:space-x-16">
-                    <button onClick={() => handleSeek(-10)} className="p-4 text-white/50 hover:text-white transition-colors active:scale-90">
-                        <RotateCcw className="w-8 h-8 md:w-12 md:h-12" />
-                    </button>
-                    <button 
-                        onClick={(e) => { e.stopPropagation(); togglePlay(); }}
-                        className="w-20 h-20 md:w-32 md:h-32 bg-white text-black rounded-full flex items-center justify-center shadow-2xl active:scale-90 transition-all"
-                    >
-                        {isPlaying ? <Pause className="w-10 h-10 md:w-16 md:h-16 fill-current" /> : <Play className="w-10 h-10 md:w-16 md:h-16 fill-current ml-2" />}
-                    </button>
-                    <button onClick={() => handleSeek(10)} className="p-4 text-white/50 hover:text-white transition-colors active:scale-90">
-                        <FastForward className="w-8 h-8 md:w-12 md:h-12" />
-                    </button>
-                </div>
-              )}
+              {/* CENTER PLAY/PAUSE/LOCK */}
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                   {!isLocked && (
+                       <div className={`flex items-center space-x-8 md:space-x-16 transition-all duration-300 ${showControls || !isPlaying ? 'scale-100 opacity-100' : 'scale-75 opacity-0'}`}>
+                           <button onClick={(e) => { e.stopPropagation(); handleSeek(-10); }} className="pointer-events-auto p-4 bg-black/40 backdrop-blur-md rounded-full text-white/80 hover:bg-orange-500 hover:text-white transition-all active:scale-90 hidden md:flex">
+                               <RotateCcw className="w-6 h-6" />
+                           </button>
+                           
+                           <button 
+                              onClick={(e) => { e.stopPropagation(); toggleStorePlay(); }} 
+                              className="pointer-events-auto w-16 h-16 md:w-24 md:h-24 bg-white/90 hover:bg-white text-black rounded-full flex items-center justify-center shadow-[0_0_40px_rgba(255,255,255,0.3)] transition-all active:scale-90"
+                           >
+                               {isPlaying ? <Pause className="w-6 h-6 md:w-10 md:h-10 fill-current" /> : <Play className="w-6 h-6 md:w-10 md:h-10 fill-current ml-1" />}
+                           </button>
 
-              {/* Bottom Mobile Control Bar */}
-              <div className="px-6 py-12 md:p-12 flex flex-col space-y-6 bg-gradient-to-t from-black/90 to-transparent pb-safe">
+                           <button onClick={(e) => { e.stopPropagation(); handleSeek(10); }} className="pointer-events-auto p-4 bg-black/40 backdrop-blur-md rounded-full text-white/80 hover:bg-orange-500 hover:text-white transition-all active:scale-90 hidden md:flex">
+                               <FastForward className="w-6 h-6" />
+                           </button>
+                       </div>
+                   )}
+
+                   {isLocked && (
+                       <div className="flex flex-col items-center animate-pulse pointer-events-none bg-black/50 p-6 rounded-3xl backdrop-blur-sm">
+                           <Lock className="w-10 h-10 text-orange-500 mb-2" />
+                           <span className="text-orange-500 text-xs font-black uppercase tracking-widest">Controls Locked</span>
+                       </div>
+                   )}
+              </div>
+
+              {/* BOTTOM DOCK */}
+              <div className={`p-4 md:p-10 bg-gradient-to-t from-black via-black/80 to-transparent pb-safe transition-transform duration-300 ${isLocked ? 'translate-y-full' : 'translate-y-0'}`}>
                   
-                  {/* Seek Bar - Large Touch Target */}
-                  <div className="w-full group/seek h-8 flex items-center cursor-pointer">
-                      <div className="relative flex-1 h-1.5 bg-white/20 rounded-full overflow-hidden">
-                          <div className="absolute inset-y-0 left-0 bg-orange-600 w-[45%]" />
-                      </div>
-                  </div>
+                  {/* Timeline (Hidden for live streams usually, but enabled for manual streams) */}
+                  {mediaType !== 'stream' && (
+                      <div className="flex items-center space-x-4 mb-6 pointer-events-auto relative select-none">
+                          <span className="text-[10px] font-mono text-stone-400 w-10 text-right">{new Date(currentTime * 1000).toISOString().substr(14, 5)}</span>
+                          <div 
+                              className="flex-1 relative h-8 flex items-center group cursor-pointer"
+                              ref={progressBarRef}
+                              onMouseMove={(e) => {
+                                  if (!progressBarRef.current || !duration) return;
+                                  const rect = progressBarRef.current.getBoundingClientRect();
+                                  const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                                  setScrubInfo({ time: percent * duration, x: e.clientX - rect.left, isVisible: true });
+                              }}
+                              onMouseLeave={() => setScrubInfo({ ...scrubInfo, isVisible: false })}
+                          >
+                              {/* Scrub Preview Bubble */}
+                              {scrubInfo.isVisible && (
+                                  <div className="absolute bottom-full mb-2 bg-stone-800 border border-stone-700 p-1.5 rounded-lg transform -translate-x-1/2 z-50 pointer-events-none" style={{ left: scrubInfo.x }}>
+                                      <div className="w-24 h-14 bg-black rounded overflow-hidden relative mb-1">
+                                           <div className="absolute inset-0 flex items-center justify-center text-stone-600"><Film className="w-4 h-4" /></div>
+                                      </div>
+                                      <div className="text-[10px] text-center font-mono text-white">{new Date(scrubInfo.time * 1000).toISOString().substr(14, 5)}</div>
+                                  </div>
+                              )}
 
-                  <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-6">
-                           <Volume2 className="w-6 h-6 text-white" />
-                           <div className="flex flex-col">
-                               <span className="text-[10px] font-black text-stone-500 uppercase">Signal</span>
-                               <span className="text-xs font-bold text-white uppercase tracking-widest">{channel.provider}</span>
+                              {/* Progress Track */}
+                              <div className="absolute inset-x-0 h-1.5 bg-stone-700/50 rounded-full overflow-hidden">
+                                  <div className="h-full bg-orange-600 rounded-full" style={{ width: `${(currentTime / duration) * 100}%` }} />
+                              </div>
+                              
+                              {/* Input Slider */}
+                              <input 
+                                  type="range" 
+                                  min={0} max={duration || 100} 
+                                  value={currentTime} 
+                                  onChange={(e) => {
+                                      const val = Number(e.target.value);
+                                      setCurrentTime(val);
+                                      if (playerRef.current) playerRef.current.currentTime(val);
+                                  }}
+                                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                              />
+                              
+                              {/* Thumb */}
+                              <div className="absolute h-4 w-4 bg-white rounded-full shadow-lg pointer-events-none transition-transform group-hover:scale-125" style={{ left: `${(currentTime / duration) * 100}%`, marginLeft: '-8px' }} />
+                          </div>
+                          <span className="text-[10px] font-mono text-stone-400 w-10">{new Date(duration * 1000).toISOString().substr(14, 5)}</span>
+                      </div>
+                  )}
+
+                  {/* Actions Row */}
+                  <div className="flex items-center justify-between pointer-events-auto">
+                      <div className="flex items-center space-x-4">
+                           <button onClick={() => setIsLocked(!isLocked)} className={`p-3 rounded-xl transition-all ${isLocked ? 'bg-orange-600 text-white' : 'bg-white/10 text-stone-400 hover:text-white'}`}>
+                               {isLocked ? <Lock className="w-5 h-5" /> : <Unlock className="w-5 h-5" />}
+                           </button>
+
+                           <div className="hidden md:flex items-center space-x-3 bg-black/40 px-4 py-2 rounded-xl">
+                               <Volume2 className="w-4 h-4 text-stone-400" />
+                               <div className="w-24 h-1 bg-stone-700 rounded-full overflow-hidden relative">
+                                   <div className="h-full bg-stone-300" style={{ width: `${localVolume}%` }} />
+                                   <input type="range" min="0" max="100" value={localVolume} onChange={(e) => {
+                                       const v = Number(e.target.value);
+                                       setLocalVolume(v);
+                                       if(playerRef.current) playerRef.current.volume(v/100);
+                                   }} className="absolute inset-0 opacity-0 cursor-pointer" />
+                               </div>
                            </div>
                       </div>
-                      <div className="flex items-center space-x-4">
-                          <button className="p-3 text-white/70 active:scale-90 transition-transform"><Settings className="w-6 h-6" /></button>
-                          <button onClick={toggleFullscreen} className="p-3 text-white/70 active:scale-90 transition-transform"><Maximize2 className="w-6 h-6" /></button>
+
+                      <div className="flex items-center space-x-3">
+                           <button onClick={toggleFullscreen} className="p-3 bg-white/10 rounded-xl text-stone-300 hover:text-white hover:bg-white/20">
+                               {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+                           </button>
                       </div>
+                  </div>
+              </div>
+
+              {/* Locked Unlock Button */}
+              {isLocked && (
+                  <div className="absolute bottom-12 left-1/2 -translate-x-1/2 pointer-events-auto animate-bounce z-50">
+                      <button 
+                          onClick={(e) => { e.stopPropagation(); setIsLocked(false); }}
+                          className="flex items-center space-x-2 px-6 py-3 bg-stone-900/90 backdrop-blur-md border border-stone-700 rounded-full text-white font-bold shadow-2xl"
+                      >
+                          <Unlock className="w-4 h-4" />
+                          <span>TAP TO UNLOCK</span>
+                      </button>
+                  </div>
+              )}
+          </div>
+      )}
+
+      {/* --- SETTINGS DRAWER (Bottom Sheet Style) --- */}
+      {showSettings && (
+          <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex flex-col justify-end animate-fade-in" onClick={() => setShowSettings(false)}>
+              <div 
+                  className="bg-stone-900 border-t border-stone-800 rounded-t-3xl p-6 md:p-8 w-full max-h-[80%] overflow-y-auto animate-slide-up"
+                  onClick={(e) => e.stopPropagation()} 
+              >
+                  <div className="flex justify-between items-center mb-8">
+                      <h3 className="text-xl font-black text-white flex items-center">
+                          <Sliders className="w-6 h-6 mr-3 text-orange-500" />
+                          Player Settings
+                      </h3>
+                      <button onClick={() => setShowSettings(false)} className="p-2 bg-stone-800 rounded-full text-stone-400 hover:text-white">
+                          <X className="w-5 h-5" />
+                      </button>
+                  </div>
+
+                  <div className="space-y-8">
+                      {/* Playback Speed */}
+                      <div>
+                          <label className="text-xs font-bold text-stone-500 uppercase tracking-widest mb-3 flex items-center">
+                              <Gauge className="w-4 h-4 mr-2" /> Playback Speed
+                          </label>
+                          <div className="flex justify-between bg-black/40 p-1.5 rounded-xl">
+                              {[0.5, 1.0, 1.25, 1.5, 2.0].map(rate => (
+                                  <button
+                                      key={rate}
+                                      onClick={() => handleSpeedChange(rate)}
+                                      className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition-all ${playbackRate === rate ? 'bg-orange-600 text-white shadow-lg' : 'text-stone-400 hover:text-white'}`}
+                                  >
+                                      {rate}x
+                                  </button>
+                              ))}
+                          </div>
+                      </div>
+
+                      {/* Screen Fit (Aspect Ratio) */}
+                      <div>
+                          <label className="text-xs font-bold text-stone-500 uppercase tracking-widest mb-3 flex items-center">
+                              <Layers className="w-4 h-4 mr-2" /> Screen Fit
+                          </label>
+                          <div className="flex justify-between bg-black/40 p-1.5 rounded-xl">
+                              {[
+                                  { id: 'contain', label: 'Fit', icon: Minimize },
+                                  { id: 'cover', label: 'Zoom', icon: Maximize2 },
+                                  { id: 'fill', label: 'Stretch', icon: MoveDiagonal }
+                              ].map((opt) => (
+                                  <button
+                                      key={opt.id}
+                                      onClick={() => setAspectRatio(opt.id as any)}
+                                      className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition-all flex items-center justify-center ${aspectRatio === opt.id ? 'bg-stone-700 text-white shadow-lg' : 'text-stone-400 hover:text-white'}`}
+                                  >
+                                      <opt.icon className="w-4 h-4 mr-2" /> {opt.label}
+                                  </button>
+                              ))}
+                          </div>
+                      </div>
+
+                      {/* Sleep Timer */}
+                      <div>
+                          <label className="text-xs font-bold text-stone-500 uppercase tracking-widest mb-3 flex items-center">
+                              <Clock className="w-4 h-4 mr-2" /> Sleep Timer
+                          </label>
+                          <div className="grid grid-cols-4 gap-2">
+                              {[null, 15, 30, 60].map((min) => (
+                                  <button
+                                      key={min || 'off'}
+                                      onClick={() => setSleepTimer(min)}
+                                      className={`py-3 rounded-xl text-sm font-bold border transition-all ${sleepTimer === min ? 'bg-orange-900/20 border-orange-500 text-orange-500' : 'bg-stone-800 border-transparent text-stone-400'}`}
+                                  >
+                                      {min ? `${min}m` : 'Off'}
+                                  </button>
+                              ))}
+                          </div>
+                      </div>
+                      
+                      {/* Quality (Mock) */}
+                      <div>
+                          <label className="text-xs font-bold text-stone-500 uppercase tracking-widest mb-3 flex items-center">
+                              <Signal className="w-4 h-4 mr-2" /> Stream Quality
+                          </label>
+                          <div className="w-full bg-stone-800 rounded-xl p-4 flex items-center justify-between">
+                               <span className="text-stone-300 font-bold">{quality}</span>
+                               <span className="text-xs text-stone-500 bg-black px-2 py-1 rounded">Auto-Optimized</span>
+                          </div>
+                      </div>
+
                   </div>
               </div>
           </div>
       )}
 
-      {/* Mini Player Overlay */}
       {isMini && (
-        <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-            <Maximize2 className="w-6 h-6 text-white" />
-        </div>
+          <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 hover:opacity-100 transition-opacity z-50">
+               <Maximize2 className="w-8 h-8 text-white drop-shadow-lg" />
+          </div>
       )}
     </div>
   );

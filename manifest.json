@@ -4,9 +4,9 @@
   "short_name": "Nebula",
   "description": "A fully immersive Live TV Operating System for the web.",
   "start_url": "/",
-  "display": "standalone",
-  "background_color": "#0c0a09",
-  "theme_color": "#ea580c",
+  "display": "fullscreen",
+  "background_color": "#000000",
+  "theme_color": "#000000",
   "orientation": "any",
   "icons": [
     {
