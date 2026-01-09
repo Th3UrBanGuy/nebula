@@ -43,6 +43,21 @@ const App: React.FC = () => {
     };
   }, []);
 
+  // --- EXIT PREVENTION (Browser Level) ---
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // If video is playing (implied by activeChannelId), warn user
+      if (activeChannelId) {
+        e.preventDefault();
+        e.returnValue = ''; // Legacy standard for Chrome/Edge
+        return ''; // Legacy standard for others
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [activeChannelId]);
+
   useEffect(() => {
     initialize();
     const timer = setTimeout(() => setShowSplash(false), 2000); 

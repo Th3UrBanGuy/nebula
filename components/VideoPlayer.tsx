@@ -8,7 +8,7 @@ import {
   SkipBack, SkipForward, Headphones, ChevronLeft, 
   Lock, Unlock, RotateCcw, FastForward, Sun, Smartphone,
   Monitor, MoveDiagonal, Music, Film, Sliders, Clock,
-  Gauge, X, Cast, Minimize, Layers
+  Gauge, X, Cast, Minimize, Layers, RefreshCcw, LogOut
 } from 'lucide-react';
 
 interface VideoPlayerProps {
@@ -16,7 +16,7 @@ interface VideoPlayerProps {
 }
 
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
-  const { activeChannelId, channels, isPlaying, volume: storeVolume, togglePlay: toggleStorePlay, setView } = useStore();
+  const { activeChannelId, channels, isPlaying, volume: storeVolume, togglePlay: toggleStorePlay, setView, setChannel } = useStore();
   
   // Refs
   const videoContainerRef = useRef<HTMLDivElement>(null);
@@ -43,10 +43,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
 
   // Advanced Player State
   const [showSettings, setShowSettings] = useState(false);
+  const [showExitConfirm, setShowExitConfirm] = useState(false); // EXIT CONFIRMATION STATE
   const [playbackRate, setPlaybackRate] = useState(1.0);
   const [quality, setQuality] = useState('Auto');
-  const [sleepTimer, setSleepTimer] = useState<number | null>(null); // minutes
+  const [sleepTimer, setSleepTimer] = useState<number | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
 
   // Scrubbing
   const [scrubInfo, setScrubInfo] = useState<{ time: number; x: number; isVisible: boolean }>({ time: 0, x: 0, isVisible: false });
@@ -56,79 +58,163 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
   // --- 1. ENGINE INITIALIZATION ---
   const detectFormat = useCallback((url: string) => {
     if (!url) return 'video';
-    const cleanUrl = url.split(/[#?]/)[0].toLowerCase();
-    const ext = cleanUrl.split('.').pop();
-    
-    if (ext === 'm3u8') return 'stream';
-    if (['mp3', 'wav', 'ogg', 'aac', 'm4a'].includes(ext || '')) return 'audio';
+    try {
+        const cleanUrl = url.split(/[#?]/)[0].toLowerCase();
+        const ext = cleanUrl.split('.').pop();
+        
+        // Explicit stream formats
+        if (['m3u8', 'm3u', 'mpd'].includes(ext || '')) return 'stream';
+        
+        // Audio formats
+        if (['mp3', 'wav', 'ogg', 'aac', 'm4a'].includes(ext || '')) return 'audio';
+        
+        // Default fallback to stream if unknown (safer for live TV URLs)
+        if (!['mp4', 'webm', 'mov'].includes(ext || '')) return 'stream';
+    } catch (e) {
+        return 'stream';
+    }
+
     return 'video';
   }, []);
 
-  useEffect(() => {
+  const initializePlayer = useCallback(() => {
     if (!channel || !videoContainerRef.current) return;
 
-    if (playerRef.current) {
-      playerRef.current.dispose();
-      playerRef.current = null;
+    // Dispose old player safely
+    try {
+        if (playerRef.current) {
+            playerRef.current.dispose();
+            playerRef.current = null;
+        }
+    } catch (e) {
+        console.warn("Player disposal warning:", e);
     }
 
-    const type = detectFormat(channel.streamUrl || '');
+    const streamUrl = channel.streamUrl || '';
+    // Safety check for empty URL
+    if (!streamUrl) {
+        setError("Invalid Signal Source");
+        setIsBuffering(false);
+        return;
+    }
+
+    const type = detectFormat(streamUrl);
     setMediaType(type);
     setError(null);
     setIsBuffering(true);
 
+    // Create fresh video element
     const videoElement = document.createElement("video-js");
     videoElement.classList.add('vjs-nebula-engine');
-    // Critical for custom UI on iOS
+    
+    // Critical for custom UI on iOS and cross-origin streams
     videoElement.setAttribute('crossorigin', 'anonymous');
     videoElement.setAttribute('playsinline', 'true');
     videoElement.setAttribute('webkit-playsinline', 'true');
     
-    // Clear previous elements
-    while (videoContainerRef.current.firstChild) {
-      videoContainerRef.current.removeChild(videoContainerRef.current.firstChild);
+    // Clear container
+    if (videoContainerRef.current) {
+        videoContainerRef.current.innerHTML = '';
+        videoContainerRef.current.appendChild(videoElement);
     }
-    videoContainerRef.current.appendChild(videoElement);
 
-    const mimeType = type === 'stream' ? 'application/x-mpegURL' : (type === 'audio' ? `audio/${channel.streamUrl?.split('.').pop()}` : 'video/mp4');
+    // Determine MIME type
+    let mimeType = 'application/x-mpegURL'; // Default to HLS for streams
+    if (type === 'audio') mimeType = `audio/${streamUrl.split('.').pop() || 'mp3'}`;
+    if (type === 'video') mimeType = 'video/mp4';
 
-    const player = playerRef.current = videojs(videoElement, {
-      autoplay: isPlaying,
-      controls: false, // Totally custom controls
-      responsive: true,
-      fluid: false, // We handle layout manually for "Center in Middle"
-      fill: true,   // Fill container
-      html5: { vhs: { overrideNative: !videojs.browser.IS_SAFARI } },
-      sources: [{ src: channel.streamUrl, type: mimeType }]
-    });
+    try {
+        const player = playerRef.current = videojs(videoElement, {
+            autoplay: isPlaying,
+            controls: false, // Totally custom controls
+            responsive: true,
+            fluid: false, 
+            fill: true,   
+            techOrder: ['html5'], // Force HTML5 first for better compatibility
+            html5: { 
+                vhs: { 
+                    overrideNative: !videojs.browser.IS_SAFARI, // Use VHS on non-Safari
+                    enableLowInitialPlaylist: true,
+                    smoothQualityChange: true
+                },
+                nativeAudioTracks: false,
+                nativeVideoTracks: false
+            },
+            sources: [{ src: streamUrl, type: mimeType }]
+        });
 
-    player.on('waiting', () => setIsBuffering(true));
-    player.on('canplay', () => setIsBuffering(false));
-    player.on('playing', () => setIsBuffering(false));
-    player.on('timeupdate', () => {
-        if (!playerRef.current) return;
-        setCurrentTime(playerRef.current.currentTime());
-        setDuration(playerRef.current.duration() || 0);
-    });
-    player.on('error', () => {
-        setError("Signal Lost");
-        setIsBuffering(false);
-    });
+        player.on('waiting', () => setIsBuffering(true));
+        player.on('canplay', () => setIsBuffering(false));
+        player.on('playing', () => setIsBuffering(false));
+        player.on('timeupdate', () => {
+            if (!playerRef.current || playerRef.current.isDisposed()) return;
+            setCurrentTime(playerRef.current.currentTime());
+            setDuration(playerRef.current.duration() || 0);
+        });
+        player.on('error', () => {
+            if (!playerRef.current || playerRef.current.isDisposed()) return;
+            const err = player.error();
+            console.error("Video Error:", err);
+            setError("Signal Lost - Reconnecting...");
+            setIsBuffering(false);
+        });
+    } catch (initError) {
+        console.error("Player Init Failed:", initError);
+        setError("Player Initialization Failed");
+    }
 
-    return () => {
-      if (player && !player.isDisposed()) player.dispose();
-    };
-  }, [channel?.id]);
+  }, [channel, retryCount]); // Re-init on retry
+
+  useEffect(() => {
+      initializePlayer();
+      return () => {
+          try {
+              if (playerRef.current && !playerRef.current.isDisposed()) {
+                  playerRef.current.dispose();
+                  playerRef.current = null;
+              }
+          } catch (e) {
+              console.warn("Cleanup error:", e);
+          }
+      };
+  }, [initializePlayer]);
 
   useEffect(() => {
     const player = playerRef.current;
     if (player && !player.isDisposed()) {
-        if (isPlaying) player.play()?.catch(() => {});
-        else player.pause();
+        if (isPlaying) {
+             const playPromise = player.play();
+             if (playPromise !== undefined) {
+                 playPromise.catch((e: any) => console.log("Play interrupted (expected):", e));
+             }
+        } else {
+            player.pause();
+        }
     }
   }, [isPlaying]);
 
-  // --- 2. ADVANCED FEATURES ---
+  const handleRetry = () => {
+      setRetryCount(prev => prev + 1);
+  };
+
+  // --- 2. BACK / EXIT LOGIC ---
+
+  const handleBackRequest = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setShowExitConfirm(true);
+  };
+
+  const confirmExit = () => {
+      setShowExitConfirm(false);
+      setChannel(''); // Stop playback
+      setView('home');
+  };
+
+  const cancelExit = () => {
+      setShowExitConfirm(false);
+  };
+
+  // --- 3. ADVANCED FEATURES ---
 
   const toggleFullscreen = useCallback(() => {
       if (!videoContainerRef.current) return;
@@ -136,16 +222,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
           videoContainerRef.current.requestFullscreen().catch(e => console.error(e));
           setIsFullscreen(true);
       } else {
-          document.exitFullscreen();
+          document.exitFullscreen().catch(e => console.error(e));
           setIsFullscreen(false);
       }
   }, []);
 
   const togglePiP = useCallback(() => {
       const vid = videoContainerRef.current?.querySelector('video');
-      if (vid && document.pictureInPictureEnabled) {
-          if (document.pictureInPictureElement) document.exitPictureInPicture();
-          else vid.requestPictureInPicture();
+      if (vid && (document as any).pictureInPictureEnabled) {
+          if ((document as any).pictureInPictureElement) (document as any).exitPictureInPicture();
+          else vid.requestPictureInPicture().catch((e: any) => console.log("PiP failed:", e));
       }
   }, []);
 
@@ -160,15 +246,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
       const timer = setTimeout(() => {
           if (isPlaying) toggleStorePlay();
           setSleepTimer(null);
-          // Optional: Show "Sleeping" UI
       }, sleepTimer * 60 * 1000);
       return () => clearTimeout(timer);
   }, [sleepTimer, isPlaying]);
 
-  // --- 3. GESTURE & INTERACTION ---
+  // --- 4. GESTURE & INTERACTION ---
 
   const handleTouchStart = (e: React.TouchEvent) => {
-    if (isLocked || showSettings) return;
+    if (isLocked || showSettings || showExitConfirm) return;
     const touch = e.touches[0];
     touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
     touchLastMoveRef.current = { x: touch.clientX, y: touch.clientY };
@@ -176,7 +261,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (isLocked || showSettings || !touchStartRef.current || !touchLastMoveRef.current) return;
+    if (isLocked || showSettings || showExitConfirm || !touchStartRef.current || !touchLastMoveRef.current) return;
     
     const touch = e.touches[0];
     const deltaY = touchLastMoveRef.current.y - touch.clientY;
@@ -210,7 +295,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
-    if (isLocked || showSettings) return;
+    if (isLocked || showSettings || showExitConfirm) return;
     setGestureFeedback(null); 
 
     if (!isDraggingRef.current && touchStartRef.current) {
@@ -259,7 +344,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
       });
   };
 
-  // --- 4. RENDER ---
+  // --- 5. RENDER ---
 
   if (!channel) return null;
 
@@ -281,7 +366,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
       />
 
       {/* --- RENDER ENGINE: CENTERED MIDDLE --- */}
-      {/* We use flex-col items-center justify-center to force content to the middle of the screen */}
       <div className={`absolute inset-0 w-full h-full flex flex-col items-center justify-center bg-black transition-all duration-500`}>
           {mediaType === 'audio' ? (
               <div className="flex flex-col items-center justify-center w-full h-full bg-gradient-to-b from-stone-900 to-black z-0">
@@ -328,11 +412,17 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
 
       {/* Loading / Error States */}
       {((isBuffering && !error) || error) && (
-          <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/40 backdrop-blur-sm pointer-events-none">
+          <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/40 backdrop-blur-sm pointer-events-auto">
               {error ? (
-                  <div className="flex flex-col items-center text-red-500 bg-stone-900/90 p-6 rounded-2xl border border-red-500/20">
+                  <div className="flex flex-col items-center text-red-500 bg-stone-900/90 p-6 rounded-2xl border border-red-500/20 max-w-xs text-center">
                       <AlertTriangle className="w-10 h-10 mb-2" />
-                      <span className="font-bold uppercase tracking-widest text-xs">{error}</span>
+                      <span className="font-bold uppercase tracking-widest text-xs mb-4">{error}</span>
+                      <button 
+                        onClick={handleRetry}
+                        className="px-4 py-2 bg-stone-800 hover:bg-stone-700 text-white rounded-lg font-bold text-sm flex items-center"
+                      >
+                          <RefreshCcw className="w-4 h-4 mr-2" /> Retry Signal
+                      </button>
                   </div>
               ) : (
                   <Loader2 className="w-12 h-12 text-orange-500 animate-spin" />
@@ -340,16 +430,50 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ isMini }) => {
           </div>
       )}
 
+      {/* --- EXIT CONFIRMATION MODAL --- */}
+      {showExitConfirm && (
+          <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-md animate-fade-in p-6">
+              <div className="bg-stone-900 border border-stone-700 rounded-3xl p-8 max-w-sm w-full shadow-2xl transform transition-all scale-100">
+                  <h3 className="text-xl font-black text-white mb-2 flex items-center">
+                      <LogOut className="w-6 h-6 mr-2 text-orange-500" /> Stop Playback?
+                  </h3>
+                  <p className="text-stone-400 text-sm mb-8">
+                      This will close the current stream and return you to the dashboard.
+                  </p>
+                  <div className="flex space-x-4">
+                      <button 
+                          onClick={cancelExit}
+                          className="flex-1 py-3 bg-stone-800 text-white font-bold rounded-xl hover:bg-stone-700 active:scale-95 transition-all"
+                      >
+                          Resume
+                      </button>
+                      <button 
+                          onClick={confirmExit}
+                          className="flex-1 py-3 bg-red-600 text-white font-bold rounded-xl hover:bg-red-500 active:scale-95 transition-all shadow-lg shadow-red-900/20"
+                      >
+                          Exit
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
       {/* --- CONTROLS OVERLAY --- */}
-      {!isMini && !showSettings && (
+      {!isMini && !showSettings && !showExitConfirm && (
           <div className={`absolute inset-0 z-40 flex flex-col justify-between transition-opacity duration-300 ${showControls || !isPlaying || isLocked ? 'opacity-100' : 'opacity-0'}`}>
               
               {/* TOP BAR */}
               <div className={`p-4 md:p-8 flex justify-between items-start bg-gradient-to-b from-black/90 to-transparent transition-transform duration-300 ${isLocked ? '-translate-y-full' : 'translate-y-0'}`}>
                   <div className="flex items-center space-x-4 pointer-events-auto">
-                      <button onClick={() => setView('home')} className="w-10 h-10 bg-white/10 backdrop-blur-md rounded-full flex items-center justify-center hover:bg-white/20 active:scale-95 transition-all">
+                      
+                      {/* BACK BUTTON */}
+                      <button 
+                          onClick={handleBackRequest} 
+                          className="w-12 h-12 bg-white/10 backdrop-blur-md rounded-full flex items-center justify-center hover:bg-white/20 active:scale-95 transition-all border border-white/5"
+                      >
                           <ChevronLeft className="w-6 h-6 text-white" />
                       </button>
+
                       <div className="max-w-[150px] md:max-w-md">
                           <h2 className="text-white font-black text-lg leading-none shadow-black drop-shadow-md truncate">{channel.name}</h2>
                           <div className="flex items-center space-x-2 mt-1">
